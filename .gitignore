@@ -166,3 +166,5 @@ cython_debug/
 
 # ruff cache
 .ruff_cache
+
+db.db

@@ -9,10 +9,11 @@ from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
-from weetags.tools.authentication import protected
+from weetags.app.routes.middlewares import extract_params
+from weetags.app.authentication.authentication import protected
 
-from weetags.params_handler import ParamsHandler
-from weetags.trees.permanent_tree import PermanentTree
+from weetags.app.params_handler import ParamsHandler
+from weetags.trees.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 
 
@@ -20,40 +21,22 @@ from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 Node = dict[str, Any]
 Relations = Literal["parent", "children", "siblings", "ancestors", "descendants"]
 
-reader = Blueprint("reader")
+records = Blueprint("records", "/records")
 
-@reader.on_request(priority=100)
-async def extract_params(request: Request):
-    nid = {k:v for k,v in request.match_info.items() if k == "nid"} or {}
-    query_args = {k:(v[0] if len(v) == 1 else v) for k,v in request.args.items()}
-    payload = request.load_json() or {}
-    params = dict(ChainMap(nid, payload, query_args))
-    request.ctx.params = ParamsHandler(**params).to_payload()
+records.on_request(extract_params, priority=100)
 
-@reader.get("favicon.ico")
-async def favicon(request: Request):
-    return empty()
-
-@reader.route("show/<tree_name:str>", methods=["GET", "POST"])
-@protected
-async def show(request: Request, tree_name: str):
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
-    if tree is None:
-        raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
-    return text(tree.draw_tree(**request.ctx.params))
-
-@reader.route("node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
+@records.route("node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
 @protected
 async def node(request: Request, tree_name: str, nid: str) -> Node:
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     return json(tree.node(**request.ctx.params))
 
-@reader.route("node/<tree_name:str>/<relation:str>/<nid:str>", methods=["GET", "POST"])
+@records.route("node/<tree_name:str>/<relation:str>/<nid:str>", methods=["GET", "POST"])
 @protected
 async def node_relations(request: Request, tree_name: str, relation: Relations, nid: str) -> Node:
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     
@@ -73,10 +56,10 @@ async def node_relations(request: Request, tree_name: str, relation: Relations, 
     return json(callback(**request.ctx.params))
     
 
-@reader.route("nodes/<tree_name:str>/<relation:str>/<nid:str>", methods=["GET", "POST"])
+@records.route("nodes/<tree_name:str>/<relation:str>/<nid:str>", methods=["GET", "POST"])
 @protected
 async def nodes_relations(request: Request, tree_name: str, relation: Relations, nid: str) -> list[Node]:
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     
@@ -95,19 +78,19 @@ async def nodes_relations(request: Request, tree_name: str, relation: Relations,
     }[relation]    
     return json(callback(**request.ctx.params))
 
-@reader.route("nodes/<tree_name:str>/where", methods=["GET", "POST"])
+@records.route("nodes/<tree_name:str>/where", methods=["GET", "POST"])
 @protected
 async def nodes_where(request: Request, tree_name: str) -> list[Node]:
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     return json(tree.nodes_where(**request.ctx.params))
 
 
-@reader.route("nodes/<tree_name:str>/<relation:str>/where", methods=["GET", "POST"])
+@records.route("nodes/<tree_name:str>/<relation:str>/where", methods=["GET", "POST"])
 @protected
 async def nodes_relation_where(request: Request, tree_name: str, relation: str) -> list[list[Node]]:
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
 

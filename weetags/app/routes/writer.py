@@ -9,8 +9,8 @@ from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
-from weetags.params_handler import ParamsHandler
-from weetags.trees.permanent_tree import PermanentTree
+from weetags.app.params_handler import ParamsHandler
+from weetags.trees.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 
 Node = dict[str, Any]
@@ -21,7 +21,7 @@ writer = Blueprint("writer")
 
 @writer.route("add/node/<tree_name:str>/<nid:str>", methods=["POST"])
 async def add_node(request: Request, tree_name:str, nid: str):
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     payload = request.load_json()
@@ -31,7 +31,7 @@ async def add_node(request: Request, tree_name:str, nid: str):
 
 @writer.route("update/node/<tree_name:str>/<nid:str>", methods=["POST"])
 async def update_node(request: Request, tree_name:str, nid: str):
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     payload = request.load_json()
@@ -40,7 +40,7 @@ async def update_node(request: Request, tree_name:str, nid: str):
 
 @writer.route("delete/node/<tree_name:str>/<nid:str>", methods=["DELETE"])
 async def delete_node(request: Request, tree_name:str, nid: str):
-    tree: PermanentTree = request.app.ctx.trees.get(tree_name, None)
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
     tree.delete_node(nid)

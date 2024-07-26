@@ -9,8 +9,8 @@ from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
-from weetags.params_handler import ParamsHandler
-from weetags.trees.permanent_tree import PermanentTree
+from weetags.app.params_handler import ParamsHandler
+from weetags.trees.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 
 login = Blueprint("login", url_prefix="/login")

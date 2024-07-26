@@ -1,42 +1,30 @@
 
+import json
 from typing import Any, Generator
+
+from weetags.exceptions import NotImplemented
+
 
 Payload = dict[str, Any]
 TableName = FieldName = str
 
-
-def infer_loader(path: str) -> str:
-    ext = path.split(".")[-1]
-    loaders = {
-        "json": JsonLoader,
-        "jl": JlLoader,
-        "jsonlines": JlLoader
-        
-    }
-    loader = loaders.get(ext, None)
-    if loader is None:
-        raise ValueError("non recognized file type")
-    return loader
-    
-
-
-import json
-from weetags.exceptions import NotImplemented
-
-class DataWrapper(object):
+class Loader(object):
     def __init__(self, data: list[Payload]) -> None:
         self.data = data
-    
-    def loader(self) -> Generator:
+        self.loader = self.default_loader
+
+    def default_loader(self) -> Generator:
         for line in iter(self.data):
             yield line
     
-    def __call__(self) -> Any:
-        yield from self.loader()
 
-class JsonLoader(object):
+class JsonLoader(Loader):
     def __init__(self, fp: str, strategy: str= "default") -> None:
         self.fp = fp
+        self.loader = {
+            "default": self.default_loader,
+            "lazy": self.lazy_loader
+        }[strategy]
 
     def default_loader(self):
         with open(self.fp) as f:
@@ -48,7 +36,7 @@ class JsonLoader(object):
         raise NotImplemented()
          
          
-class JlLoader(list):
+class JlLoader(Loader):
     def __init__(self, fp: str, strategy: str= "default") -> None:
         self.fp = fp
         self.loader = {
@@ -69,10 +57,3 @@ class JlLoader(list):
     
     def __call__(self) -> Any:
         yield from self.loader()
-        
-        
-
-# loader = infer_loader("./tags/topics.jl")
-# a = loader("./tags/topics.jl")
-# for i in a.lazy_loader():
-#     print(i)
