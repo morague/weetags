@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 import jwt
 import time
+import random
+from string import ascii_letters
 from hashlib import sha256
 from functools import wraps
+from attrs import field, define, validators
+
+from pathlib import Path
 
 from sanic import text
 from sanic.request import Request
@@ -13,11 +20,11 @@ from weetags.app.authentication.schema import UsersTable, RestrictionsTable
 from weetags.app.utils import generate_uuid
 from weetags.database.db import _Db
 from weetags.exceptions import (
-    OutatedAuthorizationToken, 
-    AuthorizationTokenRequired, 
-    InvalidToken, 
-    MissingLogin, 
-    InvalidLogin, 
+    OutatedAuthorizationToken,
+    AuthorizationTokenRequired,
+    InvalidToken,
+    MissingLogin,
+    InvalidLogin,
     AccessDenied
 )
 
@@ -28,164 +35,164 @@ def protected(f):
         if authenticator is None:
             response = await f(request, *args, **kwargs)
             return response
-        
-        tree_name = request.match_info.get("tree_name")
-        restriction = authenticator.has_restriction(request.route, tree_name)
-        
-        if restriction is None:
-            response = await f(request, *args, **kwargs)
-            return response
-        
-        if authenticator.authorize(request, restriction["auth_level"]):
+
+        elif authenticator.authorize(request):
             response = await f(request, *args, **kwargs)
             return response
         else:
             raise AccessDenied()
     return wrapped
 
-
 class Authenticator(_Db):
-    def __init__(
-        self,
-        *,
-        path: str = "db.db",
-        users: Optional[list[dict[str, str]]] = None,
-        restrictions: Optional[list[dict[str, str]]] = None,
-        max_age: Optional[int] | None = None,
-        replace: bool = False
-        ) -> None:
-        super().__init__(path)
-        self.max_age = max_age
+    def __init__(self, db: str | Path = "db.db") -> None:
+        super().__init__(db)
 
-        tables = self.get_tables("weetags")
-        if ((len(tables) == 0 or replace) and 
-            (users is None or restrictions is None)):
-            raise ValueError("you define users and restrictions in your configurations")
-        
+    @classmethod
+    def initialize(
+        cls,
+        users: list[dict[str, Any]] | None = None,
+        restrictions: list[dict[str, Any]] | None = None,
+        db: str | Path = "db.db",
+        replace: bool = False
+    ) -> Authenticator:
+        authenticator = cls(db)
+
+        tables = authenticator.get_tables("weetags")
+        if ((len(tables) == 0 or replace) and users is None):
+            raise ValueError("you must define users and restrictions in your configurations")
+
         if len(tables) > 0 and replace:
-            self.drop("weetags__restrictions")
-            self.drop("weetags__users")
-        
+            authenticator.drop("weetags__restrictions")
+            authenticator.drop("weetags__users")
+
         if len(tables) == 0 or replace:
-            self.create_table(
+            print("create tables")
+            authenticator.create_table(
                 UsersTable.initialize(),
                 RestrictionsTable.initialize()
             )
-            self._set_users(users)
-            self._set_restrictions(restrictions)
-        
-    def authenticate(self, request: Request) -> dict[str, str] | None:
-        if not request.token:
-            return None
+
+        if users is None and replace:
+            raise ValueError("Set some users or remove the authenticator from the configs")
+
+        if users is not None:
+            authenticator.add_users(*users)
+        if restrictions is not None:
+            authenticator.add_restrictions(*restrictions)
+
+        return authenticator
+
+
+    def authenticate(self, request: Request, username: str, password: str) -> str:
+        user = self.get_user(username)
+        if user is None:
+            raise InvalidLogin()
+
+        max_age = user.get("max_age")
+        auth_level = user.get("auth_level")
+        salted_password= user["salt"] + password
+        password_sha256 = sha256(salted_password.encode()).hexdigest()
+
+        if password_sha256 != user["password_sha256"]:
+            raise InvalidLogin()
+
+        return jwt.encode({"auth_level": auth_level, "max_age": self._max_time_age(max_age)}, request.app.config.SECRET)
+
+    def authorize(self, request: Request) -> bool:
+        token = request.token
+        route = request.route
+        tree = request.match_info.get("tree_name")
+
+        if token is None:
+            raise AuthorizationTokenRequired()
+
+        if tree is None:
+            raise ValueError("tree name not available")
+
+        if route is None:
+            raise ValueError("Route name not available")
 
         try:
             payload = jwt.decode(
-                request.token, request.app.config.SECRET, algorithms=["HS256"]
+                token, request.app.config.SECRET, algorithms=["HS256"]
             )
         except jwt.exceptions.InvalidTokenError:
             raise InvalidToken()
-        else:
-            return payload
-        
-    def authorize(self, request: Request, restriction: str) -> bool:
-        auth = [False, False]
-        payload = self.authenticate(request)
-        if payload is None:
-            raise AuthorizationTokenRequired()
-        
-        if restriction in payload["auth_level"]:
-            auth[0] = True
-            
-        if payload["max_age"] is None:
-            auth[1] = True
-        elif int(time.time()) <= payload["max_age"]:
-            auth[1] = True
-        else:
-            raise OutatedAuthorizationToken()
-        return all(auth)
 
-    def login(self, request: Request) -> bool:
-        payload = request.ctx.params
-        username = payload.get("username", None)
-        password = payload.get("password", None)
-        
-        if username is None or password is None:
-            raise MissingLogin()
-             
-        res = self.con.execute(
-            "SELECT password_sha256, salt, auth_level FROM weetags__users WHERE username=?",
-            [username]
-        ).fetchone()
-        
-        if res is None:
-            raise InvalidLogin()
-        
-        password_sha256 = sha256((res["salt"] + password).encode("utf-8")).hexdigest()   
-        if password_sha256 != res["password_sha256"]:
-            raise InvalidLogin()
-
-        token = jwt.encode({"auth_level": res["auth_level"].split(','), "max_age": self._set_token_max_age()}, request.app.config.SECRET)
-        return text(token)
-        
-        
-    def has_restriction(self, route: Route, tree_name: str) -> str | None:
         _, blueprint, _ = route.name.split('.')
-        auth_level = self.con.execute(f"SELECT auth_level FROM weetags__restrictions WHERE tree=? AND blueprint=?",[tree_name, blueprint]).fetchone()
-        return auth_level
-    
-    
-    def _set_restrictions(self, restrictions: dict[str, str]) -> None:
-        for r in restrictions:
-            auth_level = ",".join(r["auth_level"])
-            self.write(
-                "weetags__restrictions", 
-                ["tree", "blueprint", "auth_level"], 
-                [r["tree"], r["blueprint"], auth_level]
-            )
-            
-    def _set_users(self, users: list[str, str]) -> None:
-        for user in users:
-            password = user.get("password", None)
-            auth_levels = user.get("auth_level", None)
+        restriction = self.get_restriction(tree, blueprint)
 
-            if auth_levels is None:
-                raise KeyError("must set list of authorizations for each users")
-            
-            if password is None:
-                raise KeyError("Users must have password set")
+        if restriction is not None and not any([level in payload["auth_level"] for level in restriction["auth_level"]]):
+            raise AccessDenied()
 
-            auth_level = ",".join(auth_level)
-            salt = generate_uuid()
-            password_sha256 = sha256((salt + password).encode("utf-8")).hexdigest()
+        if int(time.time()) > payload["max_age"]:
+            raise OutatedAuthorizationToken()
+        return True
 
-            self.write(
-                "weetags__users", 
-                ["username", "password_sha256", "auth_level", "salt"], 
-                [user["username"], password_sha256, auth_level, salt]
-            )
-        
-    def _set_token_max_age(self) -> int | None:
-        max_age = self.max_age
-        if self.max_age:
-            max_age = int(time.time()) + self.max_age
-        return max_age
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        return self.con.execute("SELECT username, password_sha256, auth_level, salt, max_age FROM weetags__users WHERE username=?", [username]).fetchone()
 
-    
-    
-    # def _users_table(self) -> None:
-    #     self._drop("weetags__users")
-    #     self._table(
-    #         "weetags__users", 
-    #         {"username": "TEXT", "password_sha256": "TEXT", "auth_level": "TEXT"}, 
-    #         ["username"]
-    #     )
+    def get_restriction(self, tree: str, blueprint: str) -> dict[str, Any] | None:
+        return self.con.execute("SELECT auth_level FROM weetags__restrictions WHERE tree=? AND blueprint=?", [tree, blueprint]).fetchone()
 
-        
+    def add_users(self, *users_settings) -> None:
+        for settings in users_settings:
+            parsed_user = User(**settings)
+            self._insert_user(parsed_user)
 
-    # def _restriction_table(self) -> None:
-    #     self._drop("weetags__restrictions")
-    #     self._table(
-    #         "weetags__restrictions", 
-    #         {"tree": "TEXT", "blueprint": "TEXT", "auth_level": "TEXT"}, 
-    #         ["tree","blueprint"]
-    #     )
+    def add_restrictions(self, *restrictions_settings) -> None:
+        for settings in restrictions_settings:
+            parsed_restriction = Restriction(**settings)
+            self._insert_restriction(parsed_restriction)
+
+
+    def _insert_restriction(self, restriction: Restriction) -> None:
+        self.write(
+            "weetags__restrictions",
+            ["tree", "blueprint", "auth_level"],
+            restriction.to_sql()
+        )
+
+    def _insert_user(self, user: User) -> None:
+        self.write(
+            "weetags__users",
+            ["username", "password_sha256", "auth_level", "salt", "max_age"],
+            user.to_sql()
+        )
+
+    def _max_time_age(self, max_age: int) -> int:
+        return int(time.time()) + max_age
+
+
+@define(slots=True, kw_only=True)
+class User:
+    username: str = field(validator=[validators.instance_of(str)])
+    password: str = field(validator=[validators.instance_of(str)])
+    password_sha256: str = field(default=None)
+    auth_level: list[str] = field()
+    salt: str = field(default=None)
+    max_age: int = field(validator=[validators.instance_of(int)])
+
+    def __attrs_post_init__(self):
+        if self.password_sha256 is None and self.salt is None:
+            self.generate_salt()
+            self.generate_sha256()
+
+    def generate_salt(self):
+        self.salt =  "".join([random.choice(ascii_letters) for _ in range(16)])
+
+    def generate_sha256(self):
+        salted_password = self.salt + self.password
+        self.password_sha256 = sha256(salted_password.encode()).hexdigest()
+
+    def to_sql(self):
+        return [self.username, self.password_sha256, self.auth_level, self.salt, self.max_age]
+
+@define(slots=True, kw_only=True)
+class Restriction:
+    tree: str = field(validator=[validators.instance_of(str)])
+    blueprint: str = field(validator=[validators.instance_of(str)])
+    auth_level: list[str] = field(validator=[validators.instance_of(list)])
+
+    def to_sql(self):
+        return [self.tree, self.blueprint, self.auth_level]
