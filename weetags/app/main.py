@@ -16,7 +16,7 @@ from weetags.app.routes.records import records
 from weetags.app.routes.writer import writer
 from weetags.app.routes.login import login
 from weetags.app.routes.errors import error_handler
-from weetags.app.routes.middlewares import log_entry, log_exit
+from weetags.app.routes.middlewares import log_entry, log_exit, cookie_token
 
 
 from weetags.trees.tree_builder import TreeBuilder
@@ -60,6 +60,7 @@ class Weetags(object):
 
         self.app.on_request(log_entry, priority=500)
         self.app.on_response(log_exit, priority=500)
+        self.app.on_request(cookie_token, priority=99)
         self.app.error_handler.add(Exception, error_handler)
 
         self.app.ctx.trees = self.register_trees(trees)
