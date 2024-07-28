@@ -13,10 +13,7 @@ from weetags.trees.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 
 
-
 base = Blueprint("base")
-
-# base.on_request(extract_params, priority=100)
 
 @base.get("favicon.ico")
 async def favicon(request: Request):
@@ -25,5 +22,4 @@ async def favicon(request: Request):
 @base.route("/weetags/info", methods=["GET", "POST"])
 async def info(request: Request):
     trees = request.app.ctx.trees
-    return json({name:tree.info() for name,tree in trees.items()})
-
+    return json({"status": 200, "reasons": "OK", "data": {name:tree.info for name,tree in trees.items()}})
