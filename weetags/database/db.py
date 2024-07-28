@@ -3,13 +3,16 @@ from sqlite3 import Cursor, Row
 from sqlite3 import connect, register_adapter, register_converter
 from sqlite3 import PARSE_DECLTYPES
 
+import sqlite3
 from typing import Any, Optional, TypeVar, Literal
 
 from weetags.database.namespace import NameSpace
 from weetags.database.table import Table
 
 Payload = dict[str, Any]
-TableName = FieldName = Operator =  str
+Operator =  str
+FieldName = str
+TableName = str
 _Nid = TypeVar("_Nid", str, int)
 _SqliteTypes = TypeVar("_SqliteTypes", str, int, dict, list, bytes)
 
@@ -19,28 +22,26 @@ Modes = Literal["ro", "rw", "rwc"]
 
 class _Db(object):
     """
-    """    
+    """
     tables: dict[str, Table]
     namespace: dict[str, NameSpace]
 
     def __init__(
-        self, 
-        path: Optional[str] | None = "db.db",
-        permanent: bool = True,
+        self,
+        db: Optional[str]= ":memory:",
         tree_name: Optional[str] | None = None,
-        **params
+        **params: Any
         ) -> None:
-        
-        self.permanent = permanent
-        self._build_uri(path, permanent, **params)
+        self._build_uri(db, **params)
         self.con = connect(self.uri, detect_types=PARSE_DECLTYPES, uri=True)
         self.cursor = self.con.cursor()
         self.con.row_factory = self._record_factory
-        
+
         register_adapter(list, self.serialize)
         register_adapter(dict, self.serialize)
         register_converter("JSON", self.deserialize)
-        
+        register_converter("JSONLIST", self.deserialize)
+
         if tree_name is not None:
             # if a tree name is referenced, _Db instance builds up a table & namespace representation.
             self._reference_tables(tree_name)
@@ -50,18 +51,17 @@ class _Db(object):
     def uri(self):
         return self.__uri
 
-
     def create_table(self, *tables: Table) -> None:
         for table in tables:
             query = table.create()
             self.cursor.execute(query)
         self.con.commit()
-        
+
     def create_index(self, table: Table, field_name: str) -> None:
         query = table.add_index(field_name)
         self.cursor.execute(query)
         self.con.commit()
-    
+
     def create_triggers(self, table: Table, target_field: str,  path: Optional[str] | None = None) -> None:
         nodes_table = self.tables["nodes"]
         self.cursor.execute(table.add_insert_trigger(target_field, nodes_table.table_name, path))
@@ -73,28 +73,27 @@ class _Db(object):
     def add_column(self, table: Table, target_field: str, path: str) -> None:
         self.cursor.execute(table.add_indexing_column(target_field, path))
         self.con.commit()
-    
+
     def write(self, table_name: TableName, column_names: list[FieldName], values: list[_SqliteTypes], commit: bool = True) -> None:
         anchors = self.anchors(values)
         col_names = ' ,'.join(column_names)
         self.cursor.execute(f"INSERT OR IGNORE INTO {table_name}({col_names}) VALUES({anchors});", values)
         if commit:
             self.con.commit()
-    
+
     def write_many(self, table_name: TableName, column_names: list[FieldName], values: list[list[_SqliteTypes]], commit: bool = True) -> None:
         anchors = self.anchors(values[0]) # consider all values are the same size
         col_names = ' ,'.join(column_names)
         self.cursor.executemany(f"INSERT OR IGNORE INTO {table_name}({col_names}) VALUES({anchors});", values)
         if commit:
             self.con.commit()
-            
+
     def delete(self, conds:list[tuple[FieldName, str, Any]] | None = None, commit: bool= True) -> None:
         query, values = ArgumentParser.delete_to_sql(self.tables, self.namespace, conds)
-        print(query, values)
         self.cursor.execute(query, values)
         if commit:
             self.con.commit()
-            
+
     def _update(self, table_name: TableName, set: list[tuple[FieldName, Any]], conditions: list[tuple[str, str, Any]] | None = None, commit: bool = True):
         """primitive update that doesn't needs the tree to be fully builded to be used."""
         fields, setvalues = self.update_setter(set)
@@ -102,34 +101,32 @@ class _Db(object):
         self.cursor.execute(f"UPDATE {table_name} SET {fields} WHERE {conds};", setvalues + values)
         if commit is False:
             self.con.commit()
-            
+
     def update(self, set_values: list[tuple[FieldName, Any]], conds: list[tuple[str, str, Any]] | None = None, commit: bool = True):
         query, values = ArgumentParser.update_to_sql(self.tables, self.namespace, set_values, conds)
-        print(query, values)
         self.cursor.execute(query, values)
         if commit is False:
             self.con.commit()
-    
+
     def read_one(self, fields: list[FieldName] = ["*"], conds: list[tuple[FieldName, Operator, Any]] = None) -> Payload:
         query, values = ArgumentParser.read_to_sql(self.tables, self.namespace, fields=fields, conds=conds)
-        print(query, values)
         return self.con.execute(query, values).fetchone()
-    
+
     def read_many(
-        self, 
-        fields: list[FieldName] = "*", 
-        conds: list[tuple[FieldName, Operator, Any]] = None,
+        self,
+        fields: list[FieldName] = ["*"],
+        conds: list[tuple[FieldName, Operator, Any]] | None = None,
         order: list[FieldName] | None = None,
         axis: int = 1,
         limit: int | None = None
         ) -> list[Payload]:
         query, values = ArgumentParser.read_to_sql(self.tables, self.namespace, fields, conds, order, axis, limit)
         return self.con.execute(query, values).fetchall()
-    
+
     def drop(self, table_name: TableName) -> None:
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
         self.con.commit()
-    
+
     def table_info(self, table_name: TableName) -> list[tuple]:
         return self.cursor.execute(f"PRAGMA table_info({table_name});").fetchall()
 
@@ -141,7 +138,7 @@ class _Db(object):
 
     def max_depth(self, table_name: TableName) -> int:
         return self.cursor.execute(f"SELECT MAX(depth) FROM {table_name};").fetchone()[0]
-    
+
     def get_tables(self, name: str) -> list[TableName]:
         return self.cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '{name}__%';").fetchall()
 
@@ -151,40 +148,29 @@ class _Db(object):
         """returns list of nid, children pairs"""
         anchors = self.anchors(ids)
         return self.con.execute(f"SELECT id, children FROM {nodes_table} WHERE id IN ({anchors});", ids).fetchall()
-    
+
     def get_children_from_id(self, nodes_table: str, id: str):
         """return children"""
         return self.con.execute(f"SELECT id, children FROM {nodes_table} WHERE id=?;", [id]).fetchone()
-    
-    
 
     def _build_uri(
-        self, 
-        path: Optional[str] | None = "db.db",
-        permanent: bool = True,
+        self,
+        db: Optional[str] = ":memory:",
         **params
-        ) -> str:
-        base = "file:"
-        if path is None and permanent is True:
-            ValueError("Select either memory or parma")
-        elif permanent is False:
-            base += ":memory:"
+        ) -> None:
+        base = f"file:{db}"
+        if db == ":memory:":
             params.update({"cache":"shared"})
-        else:
-            base += path
-        
         options = "&".join([f"{k}={v}" for k,v in params.items()])
         if options:
             base += f"?{options}"
         self.__uri = base
 
-
-
     def update_setter(self, set: list[tuple[FieldName, Any]]) -> tuple[str, Any]:
         values, fields = [], []
         [(fields.append(f"{field} = ?"), values.append(val)) for field, val in set]
         return (", ".join(fields), values)
-            
+
     def conditions(self, conditions:list[tuple[FieldName, str, Any]]) -> tuple[str, Any]:
         values, conds = [], []
         for field, op, val in conditions:
@@ -208,7 +194,7 @@ class _Db(object):
                 self.tables[tkey] = Table.from_pragma(table_name, info, fk_info)
         elif len(tables) == 0 and len(self.tables.keys()) == 0:
             raise ValueError("Use the TreeBuilder object to build a tree.")
-        
+
     def _reference_namespaces(self) -> None:
         self.namespace = {}
         for table_name, table in self.tables.items():
@@ -234,29 +220,29 @@ class _Db(object):
     def _record_factory(cursor: Cursor, row: Row) -> dict[FieldName, _SqliteTypes]:
         fields = [column[0] for column in cursor.description]
         return {k:v for k,v in zip(fields, row)}
-    
+
     @staticmethod
-    def serialize(data: dict | list) -> str:
+    def serialize(data: dict[str, Any] | list[Any]) -> str:
         return json.dumps(data)
 
     @staticmethod
-    def deserialize(data: str) -> dict | list:
+    def deserialize(data: str) -> dict[str, Any] | list[Any]:
         return json.loads(data)
 
     @staticmethod
     def to_bool(data: int) -> bool:
         return bool(data)
-    
-    
-    
+
+
+
 class ArgumentParser(object):
     def __init__(self, tables: dict[str, Table], namespace: dict[str, NameSpace]) -> None:
         self.tables = tables
         self.namespace = namespace
-    
+
     @classmethod
     def read_to_sql(
-        cls, 
+        cls,
         tables: dict[str, Table],
         namespace: dict[str, NameSpace],
         fields: list[FieldName] = ["*"],
@@ -269,7 +255,7 @@ class ArgumentParser(object):
         parser = cls(tables, namespace)
         query, values = parser.parse(fields, conds, order, axis, limit)
         return (query, values)
-    
+
     @classmethod
     def update_to_sql(
         cls,
@@ -297,7 +283,7 @@ class ArgumentParser(object):
         where, values = parser.parse_where_subqueries(conds)
         query = f"DELETE FROM {table_name} {where};"
         return (query, values)
-    
+
     @classmethod
     def write_to_sql(cls, tables: dict[str, Table], namespace: dict[str, NameSpace], **kwargs) -> str:
         parser = cls(tables, namespace)
@@ -320,7 +306,7 @@ class ArgumentParser(object):
         l = self.parse_limit(limit)
         query = f"SELECT {f} FROM {node_table} {j} {w} {o} {l};"
         return query, v
-        
+
     def parse_fields(self, fields: list[FieldName]) -> str:
         if "*" in fields:
             return "*"
@@ -331,10 +317,10 @@ class ArgumentParser(object):
         from_where, from_order, from_select = [], [], [self.namespace["depth"].join(tnodes)] # ['*']
         if conds is not None:
             from_where = [self.namespace[fname].join(tnodes) for fname in [c[0] for c in conds] if self.namespace[fname].to_join()]
-            
+
         if order is not None:
             from_order = [self.namespace[fname].join(tnodes) for fname in order if self.namespace[fname].is_metadata()]
-        
+
         if "*" not in fields:
             from_select = [self.namespace[fname].join(tnodes) for fname in fields if self.namespace[fname].is_metadata()]
         return " ".join(list(set(from_select + from_order + from_where)))
@@ -351,7 +337,7 @@ class ArgumentParser(object):
     def parse_where_subqueries(self, conds: list[tuple[FieldName,str, Any]] | None) -> tuple[str, list[Any]]:
         if conds is None:
             return ("", [])
-        
+
         where, values = [], []
         nodes_table = self.tables["nodes"].table_name
         for field, op, value in conds:
@@ -370,15 +356,15 @@ class ArgumentParser(object):
                 else:
                     values.append(sub_val)
         where_str = " AND ".join(where)
-        return (f"WHERE {where_str}", values)        
-        
+        return (f"WHERE {where_str}", values)
+
 
     def parse_limit(self, limit: Optional[int] | None = None):
         l = ""
         if limit is not None:
             l = f"LIMIT {str(limit)}"
         return l
-    
+
     def parse_order(self, order: list[FieldName] | None, axis: int=1) -> str:
         substr = ""
         if order is None:
@@ -401,7 +387,7 @@ class ArgumentParser(object):
 
     def join_tables_for_update(self, set_values: list[tuple[FieldName, _SqliteTypes]], conds: list[tuple[FieldName,str, Any]] | None) -> str:
         tnodes = self.tables["nodes"].table_name
-        
+
         from_select, from_where = [], []
         from_select = [self.namespace[fname].join(tnodes) for fname,_ in set_values if self.namespace[fname].to_join()]
         if conds is not None:
@@ -416,7 +402,7 @@ class ArgumentParser(object):
 
     @staticmethod
     def anchors(values: list[Any]) -> str:
-        return ' ,'.join(["?" for _ in range(len(values))])    
+        return ' ,'.join(["?" for _ in range(len(values))])
 
     @staticmethod
     def update_setter(set: list[tuple[FieldName, Any]]) -> tuple[str, Any]:
@@ -439,9 +425,7 @@ class ArgumentParser(object):
 if __name__ == "__main__":
     from pprint import pprint
     a = _Db(path="db.db", tree_name="topics")
-    
+
     a.update([(("name_eng","test"))], conds=[("id", "=", "Healthcare")])
     b = a.read_many(fields=["id", "name_eng"], conds=[("id", "=", "Healthcare")])
     print(b)
-    
-    

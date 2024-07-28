@@ -10,7 +10,7 @@ from weetags.trees.tree import Tree
 from weetags.app.utils import infer_loader
 
 Payload = dict[str, Any]
-Path = TreeName = TableName = FieldName = str
+DataPath = TreeName = TableName = FieldName = str
 _Nid = TypeVar("_Nid", str, int)
 _SqliteTypes = TypeVar("_SqliteTypes", str, int, dict, list, bytes)
 Loaders = Literal["default", "lazy"]
@@ -19,13 +19,12 @@ Loaders = Literal["default", "lazy"]
 class TreeBuilder(_Db):
     BATCH_SIZE = 500
     root_id = None
-    
+
     def __init__(
-        self, 
-        name: TreeName,
-        path: str = "db.db", 
-        permanent: bool = True,
-        data: list[Payload] | Path | None = None,
+        self,
+        name: str,
+        db: str = ":memory:",
+        data: list[Payload] | str | None = None,
         model: Optional[dict[FieldName, _SqliteTypes]] = None,
         strategy: Loaders = "lazy",
         ) -> None:
@@ -34,7 +33,7 @@ class TreeBuilder(_Db):
             :name: (str) tree name
             :path: (str, optionnal) path to the sqlite database. default: "db.db"
             :permanent: (bool) setup sqlite on `:memory:` when false. default: True
-            :data: (list[Payload] | Path | None, optional) File path or list of records to populate inside the tree. 
+            :data: (list[Payload] | Path | None, optional) File path or list of records to populate inside the tree.
                     data can be none. In this case you must either provide the data model of the tree or having the tree already created in the database.
             :model: (dict[str, str], optionnal) dictionnary with fieldsnames as key and sqlite types as value.
             :strategy: (str, optionnal) data loading strategy. for large files, it is recommended to use the lazy loader. default: "lazy"
@@ -44,79 +43,78 @@ class TreeBuilder(_Db):
             :name: tree_name
             :data: instance able to load the data according to the selected strategy.
             :tables: tables instances with tables schema and queries generators.
-            
-        :raise: 
+
+        :raise:
             :valueError: When the TreeBuilder is unable to generate the table instances.
                         this can happen when no data, model nor existing tables are found.
         """
-        super().__init__(path, permanent=permanent)
+        super().__init__(db)
         self.name = name
         self._get_loader(data, strategy)
         self._get_model(model)
         self._get_tables()
-        
+
     @classmethod
     def build_permanent_tree(
         cls,
         *,
-        name: TreeName,
-        data: list[Payload] | Path | None = None,
-        path: Path = "db.db",
+        name: str,
+        data: list[Payload] | str | None = None,
+        db: str = ":memory:",
         indexes: Optional[list[FieldName]] = None,
         model: Optional[dict[FieldName, _SqliteTypes]] = None,
         strategy: Loaders = "lazy",
-        permanent: bool = True,
         read_only: bool = False,
         replace: bool = False
     ) -> Tree:
-        builder = cls(name, path, permanent, data, model, strategy)
+        builder = cls(name, db, data, model, strategy)
         if replace:
             builder.drop_tree()
-        if not builder.get_tables(name) or replace:   
+        if not builder.get_tables(name) or replace:
             builder.build_tree_structure()
             builder.populate_tree()
             if indexes:
                 builder.build_indexes(indexes)
-        return Tree(name=name, path=path, read_only=read_only, permanent=permanent)
-        
-        
+        return Tree(name=name, db=db, read_only=read_only)
+
+
     def drop_tree(self) -> None:
         tables = self.get_tables(self.name)
         for table in tables:
-            self.drop(table[0]) 
-            
+            self.drop(table[0])
+
     def build_tree_structure(self) -> None:
         tables = [self.tables["nodes"], self.tables["metadata"]]
         self.create_table(*tables)
-    
+
     def populate_tree(self) -> None:
         batch, parent2children = deque(), defaultdict(list)
 
         for node in self.data.loader():
             if node.get("children", None) is None:
                 node.update({"children":[]})
-                
+
             # add directly the root node ... with meta data.
             if node["parent"] is None and self.root_id is None:
                 self._build_root(node)
                 continue
-            
-            # build batch    
+
+            # build batch
             batch.append(node)
             if node.get("parent", None):
                 parent2children[node["parent"]].append(node["id"])
-                
+
             # write db when batch size is attained
             if len(batch) == self.BATCH_SIZE:
                 (batch, parent2children) = self._build_nodes(batch, parent2children)
                 parent2children = self._add_remaining_children(parent2children)
-                self.con.commit()        
+                self.con.commit()
         # do the remaining nodes
         if len(batch) > 0:
             (batch, parent2children) = self._build_nodes(batch, parent2children)
             parent2children = self._add_remaining_children(parent2children)
             self.con.commit()
-    
+
         # still need to setup metadata
         self._build_metadata()
         self.con.commit()
@@ -127,14 +125,14 @@ class TreeBuilder(_Db):
             field = getattr(self.tables["nodes"], fname.split(".")[0], None)
             if field is None:
                 raise ValueError("trying to build index on a non referenced field.")
-    
+
             if field.dtype == "JSON" and len(fname.split(".")) > 1:
                 base, path = field.split(".")
                 self.add_column(nodes_table, base, path)
                 self.create_triggers(nodes_table, fname.replace(".","_"), path)
                 self.create_index(nodes_table, fname.replace(".","_"))
-                
-            elif field.dtype == "JSON" and len(fname.split(".")) == 1:
+
+            elif field.dtype == "JSONlist" and len(fname.split(".")) == 1:
                 index_field = {
                     "value":Field(fname, field.dtype, pk=True),
                     "nid": Field("nid", "TEXT", pk=True, fk=f"{nodes_table.table_name}.id")
@@ -144,7 +142,7 @@ class TreeBuilder(_Db):
                 self.create_table(index_table)
                 self.create_index(index_table, fname)
                 self.create_triggers(index_table, fname)
-                
+
             else:
                 self.create_index(nodes_table, fname)
 
@@ -154,15 +152,15 @@ class TreeBuilder(_Db):
         nodes_table = self.tables["nodes"].table_name
         metadata_table = self.tables["metadata"].table_name
         self.root_id = node["id"]
-        self.write(nodes_table, list(node.keys()), list(node.values()))   
+        self.write(nodes_table, list(node.keys()), list(node.values()))
         self.write(metadata_table, ["nid", "depth", "is_root", "is_leaf"], [node["id"], 0, True, False])
 
     def _build_nodes(
-        self, 
-        batch: deque, 
+        self,
+        batch: deque,
         parent2children: dict[str, list[_Nid]]
         ) -> tuple[deque, dict[str, list[_Nid]]]:
-        
+
         nodes_table = self.tables["nodes"].table_name
         k, v = list(batch[0].keys()), []
         while len(batch) > 0:
@@ -193,12 +191,12 @@ class TreeBuilder(_Db):
             children = self.get_children_from_id(nodes_table, nid)
             values.append(tuple((nid, current_layer, False, not any(children["children"]))))
             queue.extend(children["children"])
-            
+
             layers_size[current_layer + 1] += len(children["children"])
             layers_size[current_layer] -= 1
             if layers_size[current_layer] == 0:
                 current_layer += 1
-                
+
             if len(values) == self.BATCH_SIZE:
                 self.write_many(metadata_table, ["nid", "depth", "is_root", "is_leaf"], values)
                 values = []
@@ -220,23 +218,23 @@ class TreeBuilder(_Db):
         nodes_fields = {k:Field(k,v) for k,v in self._model.items() if k not in ["nid", "id", "parent", "children"]}
         self.tables["nodes"] = NodesTable.initialize(self.name, **nodes_fields)
         self.tables["metadata"] = MetadataTable.initialize(self.name)
-        
-    def _get_loader(self, data: list[Payload] | Path | None, strategy: Loaders) -> Loader | None:
+
+    def _get_loader(self, data: list[Payload] | str | None, strategy: Loaders) -> Loader | None:
         if isinstance(data, str):
             loader = infer_loader(data)
             data = loader(data, strategy)
         elif isinstance(data, list):
-            data = Loader(data) 
+            data = Loader(data)
         self.data = data
         return self.data
-    
+
     def _get_model(self, model: Optional[dict[FieldName, _SqliteTypes]] | None):
         if self.data is None and model is None:
             self._model = None
         elif model is None:
             self._infer_model()
         else:
-            self._model = model        
+            self._model = model
 
     def _infer_model(self) -> dict[str,str]:
         def _infer_type(v: Any) -> str:
@@ -246,15 +244,17 @@ class TreeBuilder(_Db):
             elif isinstance(v, int):
                 dtype = "INTEGER"
             elif isinstance(v, str):
-                dtype = "TEXT"    
+                dtype = "TEXT"
             elif v is None:
                 dtype = "NULL"
             elif isinstance(v, float):
                 dtype = "REAL"
+            elif isinstance(v, list):
+                dtype = "JSONLIST"
             else:
                 dtype = "JSON"
             return dtype
-        
+
         model = {}
         for payload in self.data.loader():
             for field, value in payload.items():
@@ -274,11 +274,11 @@ class TreeBuilder(_Db):
             raise KeyError("payload must have id field")
         if model.get("id") != "TEXT":
             raise ValueError("Id must be a string")
-        model.update({"parent": model["id"], "children": "JSON"})
+        model.update({"parent": model["id"], "children": "JSONLIST"})
         self._model = model
-    
-    
-        
+
+
+
 if __name__ == "__main__":
     tree = TreeBuilder.build_permanent_tree(name="topics", data="./tags/topics.jl", indexes=["id", "alias"])
     tree.show_tree()
