@@ -4,34 +4,30 @@ app:
     app:
       secret: "SuperSecretKey"
     blueprints:
+      - base
       - reader
       - login
       - writer
-    
+
   authentication:
-    path: "./path/to/db.db"
-    salt: saltyUSers00
-    max_age: 3600
+    db: ":memory:"
     users:
-      - username: someone
-        password: YourPassword
-        auth_level: 
-          - admin
-      - username: someoneElse
-        password_sha256: YourSha256
-        auth_level: 
-          - admin
+      - username: test
+        password: test
+        auth_level:
+          - "admin"
+          - "super admin"
+        max_age: 600
     restrictions:
-      - tree: treeName
+      - tree: topics
         blueprint: reader
-        auth_level: 
-          - admin 
+        auth_level:
+          - admin
 
   trees:
     topics:
       name: topics
-      path: "./path/to/db.db"
-      permanent: True
+      db: ":memory:"
       replace: False
       read_only: False
       data: "./path/to/data/file.jl"
@@ -43,8 +39,7 @@ app:
 
     audiences:
       name: audiences
-      path: "./path/to/db.db"
-      permanent: True
+      db: "./path/to/db.db"
       replace: False
       read_only: False
       data: "./path/to/data/file.jl"
@@ -56,8 +51,7 @@ app:
 
     locations:
       name: locations
-      path: "./path/to/db.db"
-      permanent: True
+      db: "./path/to/db.db"
       replace: False
       read_only: False
       data: "./path/to/data/file.jl"
@@ -71,7 +65,7 @@ app:
     version: 1
     disable_existing_loggers: False
     formatters:
-      simple: 
+      simple:
         class: logging.Formatter
         format: "[%(asctime)s][%(name)s][%(process)d][%(levelname)s] | %(message)s"
         datefmt: "%d-%m-%Y %H:%M:%S"
@@ -105,8 +99,3 @@ app:
         level: INFO
         handlers: [error_stream, error_file, access_file]
         propagate: True
-
-
-
-
-
