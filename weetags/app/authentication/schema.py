@@ -10,7 +10,7 @@ class UsersTable(Table):
     password_sha256: Field = field(default=Field("password_sha256", "TEXT", nullable=False))
     auth_level: Field = field(default=Field("auth_level", "JSONLIST", nullable=False))
     salt: Field = field(default=Field("salt","TEXT", nullable=False))
-    max_age: Field = field(default=Field("max_age", "REAL", nullable=False))
+    max_age: Field = field(default=Field("max_age", "INTEGER", nullable=False))
 
     def __repr__(self) -> str:
         return super().__repr__()
