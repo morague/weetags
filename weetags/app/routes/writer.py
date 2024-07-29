@@ -16,7 +16,7 @@ from weetags.app.routes.middlewares import extract_params
 Node = dict[str, Any]
 Relations = Literal["parent", "children", "siblings", "ancestors", "descendants"]
 
-writer = Blueprint("writer")
+writer = Blueprint("writer", "/records")
 writer.on_request(extract_params, priority=100)
 
 @writer.route("add/node/<tree_name:str>/<nid:str>", methods=["POST"])
@@ -30,7 +30,8 @@ async def add_node(request: Request, tree_name:str, nid: str) -> JSONResponse:
         raise ValueError("missing node payload")
 
     params.get("node").update({"id": nid})
-    params.get("node").pop("nid")
+    params.get("node").pop("nid", None)
+    tree.add_node(**params)
     return json({"status": 200, "reasons": "OK", "data": {"added": nid}},status=200)
 
 @writer.route("update/node/<tree_name:str>/<nid:str>", methods=["POST"])
@@ -47,7 +48,7 @@ async def update_node(request: Request, tree_name:str, nid: str):
     tree.update_node(nid, params.get("set_values"))
     return json({"status": 200, "reasons": "OK", "data": {"updated": nid}},status=200)
 
-@writer.route("delete/node/<tree_name:str>/<nid:str>", methods=["POST"])
+@writer.route("delete/node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
 async def delete_node(request: Request, tree_name:str, nid: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
