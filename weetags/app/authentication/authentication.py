@@ -66,7 +66,6 @@ class Authenticator(_Db):
             authenticator.drop("weetags__users")
 
         if len(tables) == 0 or replace:
-            print("create tables")
             authenticator.create_table(
                 UsersTable.initialize(),
                 RestrictionsTable.initialize()

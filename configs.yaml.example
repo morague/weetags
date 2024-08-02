@@ -1,36 +1,37 @@
 app:
-  env: "production"
+  env: production
   sanic:
     app:
-      secret: "SuperSecretKey"
+      secret: SuperSecretKey
     blueprints:
       - base
-      - reader
+      - records
       - login
       - writer
 
   authentication:
-    db: ":memory:"
+    db: :memory:
     users:
       - username: test
         password: test
         auth_level:
-          - "admin"
-          - "super admin"
+          - admin
+          - super admin
         max_age: 600
     restrictions:
       - tree: topics
-        blueprint: reader
+        blueprint: records
         auth_level:
           - admin
 
   trees:
     topics:
       name: topics
-      db: ":memory:"
+      db: :memory:
       replace: False
       read_only: False
-      data: "./path/to/data/file.jl"
+      data:
+        - ./path/to/data/file.jl
       indexes:
         - fieldName0
         - fieldName1
@@ -39,10 +40,11 @@ app:
 
     audiences:
       name: audiences
-      db: "./path/to/db.db"
+      db: ./path/to/db.db
       replace: False
       read_only: False
-      data: "./path/to/data/file.jl"
+      data:
+        - ./path/to/data/file.jl
       indexes:
         - fieldName0
         - fieldName1
@@ -51,10 +53,11 @@ app:
 
     locations:
       name: locations
-      db: "./path/to/db.db"
+      db: ./path/to/db.db
       replace: False
       read_only: False
-      data: "./path/to/data/file.jl"
+      data:
+        - ./path/to/data/file.jl
       indexes:
         - fieldName0
         - fieldName1
@@ -97,5 +100,5 @@ app:
     loggers:
       endpointAccess:
         level: INFO
-        handlers: [error_stream, error_file, access_file]
+        handlers: [stream, error_file, access_file]
         propagate: True
