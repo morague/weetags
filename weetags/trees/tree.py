@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections import deque, defaultdict, OrderedDict
 from itertools import chain
 from typing import Literal, TypeVar, Optional, Any, Callable
@@ -114,11 +115,22 @@ class Tree(_Db):
         return [self.node(c, fields) for c in pnode["children"] if c != nid]
 
     def ancestors_nodes(self, nid: _Nid, fields: list[FieldName] = ["*"]) -> list[Payload]:
+        remove_parent= False
+        if fields != ["*"] and "parent" not in fields:
+            # force parent, as needed to go up ancestors
+            remove_parent = True
+            fields =  ["parent"] + fields
+
         ancestors = []
         node = self.node(nid, ["id","parent"])
         while node["parent"]:
             node = self.node(node["parent"], fields)
-            ancestors.append(node)
+            if remove_parent:
+                payload = copy.deepcopy(node)
+                payload.pop("parent", None)
+                ancestors.append(payload)
+            else:
+                ancestors.append(node)
         return ancestors
 
     def descendants_nodes(self, nid: _Nid, fields: list[FieldName] = ["*"]) -> list[Payload]:
