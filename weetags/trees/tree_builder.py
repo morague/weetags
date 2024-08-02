@@ -1,5 +1,5 @@
 from collections import defaultdict, deque
-from typing import Any, TypeVar, Optional, Literal
+from typing import Any, Type, TypeVar, Optional, Literal
 
 from weetags.tools.loaders import Loader, JlLoader, JsonLoader
 from weetags.database.db import _Db
@@ -17,6 +17,10 @@ Loaders = Literal["default", "lazy"]
 
 
 class TreeBuilder(_Db):
+    name: str
+    data: list[Type[Loader]] | None
+    model: dict[str, str]
+    tables: dict[str, Type[Table]]
     BATCH_SIZE = 500
     root_id = None
 
@@ -24,7 +28,7 @@ class TreeBuilder(_Db):
         self,
         name: str,
         db: str = ":memory:",
-        data: list[Payload] | str | None = None,
+        data: list[Payload] | list[str] | None = None,
         model: Optional[dict[FieldName, _SqliteTypes]] = None,
         strategy: Loaders = "lazy",
         ) -> None:
@@ -59,7 +63,7 @@ class TreeBuilder(_Db):
         cls,
         *,
         name: str,
-        data: list[Payload] | str | None = None,
+        data: list[Payload] | list[str] | None = None,
         db: str = ":memory:",
         indexes: Optional[list[FieldName]] = None,
         model: Optional[dict[FieldName, _SqliteTypes]] = None,
@@ -68,6 +72,9 @@ class TreeBuilder(_Db):
         replace: bool = False
     ) -> Tree:
         builder = cls(name, db, data, model, strategy)
+        if builder.data is None and not builder.get_tables(name):
+            raise ValueError("Tree not found. You must initialize with data to build the tree")
+
         if replace:
             builder.drop_tree()
         if not builder.get_tables(name) or replace:
@@ -89,26 +96,29 @@ class TreeBuilder(_Db):
 
     def populate_tree(self) -> None:
         batch, parent2children = deque(), defaultdict(list)
+        if self.data is None:
+            return
 
-        for node in self.data.loader():
-            if node.get("children", None) is None:
-                node.update({"children":[]})
+        for load in self.data:
+            for node in load.loader():
+                if node.get("children", None) is None:
+                    node.update({"children":[]})
 
-            # add directly the root node ... with meta data.
-            if node["parent"] is None and self.root_id is None:
-                self._build_root(node)
-                continue
+                # add directly the root node ... with meta data.
+                if node["parent"] is None and self.root_id is None:
+                    self._build_root(node)
+                    continue
 
-            # build batch
-            batch.append(node)
-            if node.get("parent", None):
-                parent2children[node["parent"]].append(node["id"])
+                # build batch
+                batch.append(node)
+                if node.get("parent", None):
+                    parent2children[node["parent"]].append(node["id"])
 
-            # write db when batch size is attained
-            if len(batch) == self.BATCH_SIZE:
-                (batch, parent2children) = self._build_nodes(batch, parent2children)
-                parent2children = self._add_remaining_children(parent2children)
-                self.con.commit()
+                # write db when batch size is attained
+                if len(batch) == self.BATCH_SIZE:
+                    (batch, parent2children) = self._build_nodes(batch, parent2children)
+                    parent2children = self._add_remaining_children(parent2children)
+                    self.con.commit()
         # do the remaining nodes
         if len(batch) > 0:
             (batch, parent2children) = self._build_nodes(batch, parent2children)
@@ -215,20 +225,29 @@ class TreeBuilder(_Db):
                 self.tables[tkey] = Table.from_pragma(table_name, info, fk_info)
         elif self._model is None:
             raise ValueError("input either data or a data model")
-        nodes_fields = {k:Field(k,v) for k,v in self._model.items() if k not in ["nid", "id", "parent", "children"]}
-        self.tables["nodes"] = NodesTable.initialize(self.name, **nodes_fields)
-        self.tables["metadata"] = MetadataTable.initialize(self.name)
+        else:
+            nodes_fields = {k:Field(k,v) for k,v in self._model.items() if k not in ["nid", "id", "parent", "children"]}
+            self.tables["nodes"] = NodesTable.initialize(self.name, **nodes_fields)
+            self.tables["metadata"] = MetadataTable.initialize(self.name)
 
-    def _get_loader(self, data: list[Payload] | str | None, strategy: Loaders) -> Loader | None:
-        if isinstance(data, str):
-            loader = infer_loader(data)
-            data = loader(data, strategy)
-        elif isinstance(data, list):
-            data = Loader(data)
-        self.data = data
+    def _get_loader(self, data: list[Payload] | list[str] | None, strategy: Loaders) -> list[Type[Loader]] | None:
+        if data is None:
+            self.data = data
+        if not data:
+            self.data = None
+        elif isinstance(data, list) and isinstance(data[0], dict):
+            self.data = [Loader(data)] #type: ignore
+        elif isinstance(data, list) and isinstance(data[0], str):
+            self.data = []
+            for path in data:
+                loader = infer_loader(path)
+                loaded_data = loader(path, strategy) # type: ignore
+                self.data.append(loaded_data)
+        else:
+            raise ValueError("data must be of type list[dict[str, Any]] | list[str] | None")
         return self.data
 
-    def _get_model(self, model: Optional[dict[FieldName, _SqliteTypes]] | None):
+    def _get_model(self, model: Optional[dict[FieldName, _SqliteTypes]] | None) -> None:
         if self.data is None and model is None:
             self._model = None
         elif model is None:
@@ -236,7 +255,10 @@ class TreeBuilder(_Db):
         else:
             self._model = model
 
-    def _infer_model(self) -> dict[str,str]:
+    def _infer_model(self) -> None:
+        if self.data is None:
+            return
+
         def _infer_type(v: Any) -> str:
             dtype = None
             if isinstance(v, bool):
@@ -256,29 +278,33 @@ class TreeBuilder(_Db):
             return dtype
 
         model = {}
-        for payload in self.data.loader():
-            for field, value in payload.items():
-                current_dtype = model.get(field, None)
-                dtype = _infer_type(value)
-                if current_dtype is None:
-                    model[field] = dtype
-                    continue
-                elif dtype is None and current_dtype != "NULL":
-                    continue
-                elif current_dtype == "NULL" and dtype != "NULL":
-                    model[field] = dtype
-                    continue
-                elif current_dtype != dtype:
-                    raise ValueError("datatypes not the same all along the dataset")
+        for load in self.data:
+            for payload in load.loader():
+                for field, value in payload.items():
+                    current_dtype = model.get(field, None)
+                    dtype = _infer_type(value)
+                    if current_dtype is None:
+                        model[field] = dtype
+                        continue
+                    elif dtype is None and current_dtype != "NULL":
+                        continue
+                    elif current_dtype == "NULL" and dtype != "NULL":
+                        model[field] = dtype
+                        continue
+                    elif current_dtype != dtype:
+                        raise ValueError("datatypes not the same all along the dataset")
+
         if "id" not in model.keys():
             raise KeyError("payload must have id field")
+
         if model.get("id") != "TEXT":
             raise ValueError("Id must be a string")
+
         model.update({"parent": model["id"], "children": "JSONLIST"})
         self._model = model
 
 
 
 if __name__ == "__main__":
-    tree = TreeBuilder.build_permanent_tree(name="topics", data="./tags/topics.jl", indexes=["id", "alias"])
+    tree = TreeBuilder.build_permanent_tree(name="topics", data=["./tags/topics.jl"], indexes=["id", "alias"])
     tree.show_tree()
