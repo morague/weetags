@@ -1,8 +1,14 @@
-# TO DO:
-* force nid to be a String type and not of Any types
-* pass change column id name to nid in records table. apply adjustment accordingly
-* improve loaders diversity
-* test param handlers parsers and add validators
-* clean code 
+# Weetags
+Weetags is a framework providing tools for building Tree structures and ways to interact with them.
+Made to be small, weetags relies on the SQLite engine for storing and querying it's data.
+* Create and modify tree structures
+* Draw trees and subtrees.
+* query your trees to collect nodes data and nodes relations.
 
-* add include self argument
+Weetags app is a Sanic Http server offering an out of the box api service for interacting with your trees data.
+
+# Prerequisites
+To be defined.
+
+# How to use
+To be defined.
