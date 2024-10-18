@@ -72,7 +72,7 @@ class Weetags(object):
 
     @classmethod
     def create_app(cls) -> Sanic:
-        cfg = get_config(environ.get("CONFIG_FILEPATH", "./configs/configs.yaml"))
+        cfg = get_config(environ.get("WEETAGS_CONFIG_FILEPATH", "./configs/configs.yaml"))
         weetags = cls(**cfg)
         return weetags.app
 
