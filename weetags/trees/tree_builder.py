@@ -308,5 +308,5 @@ class TreeBuilder(_Db):
 
 
 if __name__ == "__main__":
-    tree = TreeBuilder.build_permanent_tree(name="langs", data=["/home/morague/Documents/github/CG/language-use-data-platform/weetags/tags/lang.jl"], indexes=["id"])
+    tree = TreeBuilder.build_permanent_tree(name="langs", data=["./tags/topics.jl"], indexes=["id"])
     tree.show_tree()
