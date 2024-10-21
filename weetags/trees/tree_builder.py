@@ -291,7 +291,9 @@ class TreeBuilder(_Db):
                     elif current_dtype == "NULL" and dtype != "NULL":
                         model[field] = dtype
                         continue
-                    elif current_dtype != dtype:
+                    elif current_dtype != dtype and dtype != "NULL":
+                        print(payload)
+                        print(current_dtype, dtype)
                         raise ValueError("datatypes not the same all along the dataset")
 
         if "id" not in model.keys():
@@ -306,5 +308,5 @@ class TreeBuilder(_Db):
 
 
 if __name__ == "__main__":
-    tree = TreeBuilder.build_permanent_tree(name="topics", data=["./tags/topics.jl"], indexes=["id", "alias"])
+    tree = TreeBuilder.build_permanent_tree(name="langs", data=["/home/morague/Documents/github/CG/language-use-data-platform/weetags/tags/lang.jl"], indexes=["id"])
     tree.show_tree()
