@@ -55,16 +55,38 @@ def parse_client_config(filename: str, *configs: Payload) -> None:
         writer.write(f"var config = {json.dumps(client_cfg)};")
 
 
-def map_env(config: Payload) -> Payload:
-    for k, v in config.items():
+def map_env(payload: Payload) -> Payload:
+    def get_env_value(v: str) -> str:
+        v = os.environ.get(v.split("{")[1].strip("}"), None) # type: ignore
+        if v is None:
+            raise KeyError(f"ENV variable {k} does not exist")
+        return v.strip('\r')
+
+    def parse_list(v: list[Any]) -> list[Any]:
+        parsed_elms = []
+        for elm in v:
+            if isinstance(elm, str) and elm.startswith("${"):
+                parsed_elms.append(get_env_value(elm))
+            elif isinstance(elm, dict):
+                parsed_elms.append(map_env(elm))
+            elif isinstance(elm, list):
+                parsed_elms.append(parse_list(elm))
+            else:
+                parsed_elms.append(elm)
+        return parsed_elms
+
+    def parse_value(key: str, value: Any):
         if isinstance(v, str) and v.startswith("${"):
-            v = os.environ.get(v.split("{")[1].strip("}"), None)
-            if v is None:
-                raise KeyError(f"ENV variable {k} does not exist")
-            config[k] = v
+            payload[k] = get_env_value(v)
         elif isinstance(v, dict):
-            config[k] = map_env(v)
-    return config
+            payload[k] = map_env(v)
+        elif isinstance(v, list):
+            payload[k] = parse_list(v)
+
+    for k, v in payload.items():
+        parse_value(k,v)
+    return payload
+
 
 
 def get_config(path: str) -> Payload:
