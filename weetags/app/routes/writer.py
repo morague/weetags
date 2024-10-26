@@ -9,6 +9,7 @@ from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
+from weetags.app.authentication.authentication import protected
 from weetags.trees.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 from weetags.app.routes.middlewares import extract_params
@@ -20,6 +21,7 @@ writer = Blueprint("writer", "/records")
 writer.on_request(extract_params, priority=100)
 
 @writer.route("add/node/<tree_name:str>/<nid:str>", methods=["POST"])
+@protected
 async def add_node(request: Request, tree_name:str, nid: str) -> JSONResponse:
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
@@ -35,6 +37,7 @@ async def add_node(request: Request, tree_name:str, nid: str) -> JSONResponse:
     return json({"status": 200, "reasons": "OK", "data": {"added": nid}},status=200)
 
 @writer.route("update/node/<tree_name:str>/<nid:str>", methods=["POST"])
+@protected
 async def update_node(request: Request, tree_name:str, nid: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
@@ -49,6 +52,7 @@ async def update_node(request: Request, tree_name:str, nid: str):
     return json({"status": 200, "reasons": "OK", "data": {"updated": nid}},status=200)
 
 @writer.route("delete/node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
+@protected
 async def delete_node(request: Request, tree_name:str, nid: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:

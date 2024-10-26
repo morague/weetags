@@ -12,7 +12,7 @@ from weetags.exceptions import TreeDoesNotExist
 
 from weetags.app.routes.base import base
 from weetags.app.routes.show import shower
-from weetags.app.routes.records import records
+from weetags.app.routes.records import records, utils
 from weetags.app.routes.writer import writer
 from weetags.app.routes.login import login
 from weetags.app.routes.errors import error_handler

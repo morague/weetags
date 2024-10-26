@@ -78,6 +78,9 @@ class ParamsParser:
     extra_space: bool | None = field(default=None, converter=parse_bool)
     style: str | None = field(default=None, converter=parse_str)
 
+    #utils
+    nid0: str | None = field(default=None, converter=parse_str)
+    nid1: str | None = field(default=None, converter=parse_str)
     # writing
     node: dict[str, Any] | None = field(default=None)
     set_values: list[tuple[str, Any]] | None = field(default=None)

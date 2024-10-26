@@ -158,6 +158,26 @@ class Tree(_Db):
                 break
         return orphans
 
+    def is_related(self, nid0: _Nid, nid1: _Nid, check_siblings: bool=False) -> bool:
+        if nid0 == nid1:
+            return True
+
+        desc = [i["id"] for i in self.descendants_nodes(nid0, fields=["id"])]
+        print(desc)
+        if nid1 in desc:
+            return True
+
+        ancs = [i["id"] for i in self.ancestors_nodes(nid0, fields=["id"])]
+        print(ancs, nid1)
+        if nid1 in ancs:
+            return True
+
+        if check_siblings:
+            sibs = [i["id"] for i in self.siblings_nodes(nid0, fields=["id"])]
+            if nid1 in sibs:
+                return True
+        return False
+
     def path(self, node:_Nid, to:_Nid, fields: list[FieldName] = ["*"]) -> list[Payload]:
         from_node = [self.node(node, list(set(["id", "parent"] + fields)))]
         to_node = [self.node(to, list(set(["id", "parent"] + fields)))]
@@ -336,4 +356,8 @@ class Tree(_Db):
 if __name__ == "__main__":
     from pprint import pprint
     tree = Tree("topics", "./volume/db.db")
-    # tree.show_tree()
+    tree.show_tree()
+
+    nid0 = "Childcare"
+    nid1 = "Integration"
+    print(tree.is_related(nid0, nid1))

@@ -117,3 +117,16 @@ async def nodes_relation_where(request: Request, tree_name: str, relation: str) 
         },
         status=200
     )
+
+
+utils = Blueprint("utils", "/utils")
+utils.on_request(extract_params, priority=100)
+
+@utils.route("<tree_name:str>/related/<nid0:str>/<nid1:str>", methods=["GET"])
+@protected
+async def is_related(request: Request, tree_name: str, nid0: str, nid1: str) -> JSONResponse:
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
+    if tree is None:
+        raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
+    params = request.ctx.params.get_kwargs(tree.is_related)
+    return json({"status": "200", "reasons": "OK", "data": tree.is_related(**params)},status=200)

@@ -18,7 +18,7 @@ async def log_exit(request: Request, response: HTTPResponse) -> None:
         logger.info(f"[{request.host}] > {request.method} {request.url} [{str(response.status)}][{str(len(response.body))}b][{perf}s]")
 
 async def extract_params(request: Request) -> None:
-    nid = {k:unquote(v) for k,v in request.match_info.items() if k == "nid"} or {}
+    nid = {k:unquote(v) for k,v in request.match_info.items() if k in ["nid", "nid0", "nid1"]} or {}
     query_args = {k:(v[0] if len(v) == 1 else v) for k,v in request.args.items()}
     payload = request.load_json() or {}
     params = dict(ChainMap(nid, payload, query_args))
