@@ -49,7 +49,7 @@ class NameSpace(object):
         return (f"{self.index_table}.{self.fname} {op} {anchor(op)}", value)
 
     def to_join(self) -> bool:
-        return self.table.split("__")[1] != "nodes"
+        return self.index_table.split("__")[1] != "nodes"
 
     def is_metadata(self) -> bool:
         return self.table.split("__")[1] == "metadata"

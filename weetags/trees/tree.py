@@ -163,12 +163,10 @@ class Tree(_Db):
             return True
 
         desc = [i["id"] for i in self.descendants_nodes(nid0, fields=["id"])]
-        print(desc)
         if nid1 in desc:
             return True
 
         ancs = [i["id"] for i in self.ancestors_nodes(nid0, fields=["id"])]
-        print(ancs, nid1)
         if nid1 in ancs:
             return True
 

@@ -79,9 +79,9 @@ class TreeBuilder(_Db):
             builder.drop_tree()
         if not builder.get_tables(name) or replace:
             builder.build_tree_structure()
-            builder.populate_tree()
             if indexes:
                 builder.build_indexes(indexes)
+            builder.populate_tree()
         return Tree(name=name, db=db, read_only=read_only)
 
 
@@ -142,7 +142,7 @@ class TreeBuilder(_Db):
                 self.create_triggers(nodes_table, fname.replace(".","_"), path)
                 self.create_index(nodes_table, fname.replace(".","_"))
 
-            elif field.dtype == "JSONlist" and len(fname.split(".")) == 1:
+            elif field.dtype == "JSONLIST" and len(fname.split(".")) == 1:
                 index_field = {
                     "value":Field(fname, field.dtype, pk=True),
                     "nid": Field("nid", "TEXT", pk=True, fk=f"{nodes_table.table_name}.id")
@@ -292,8 +292,6 @@ class TreeBuilder(_Db):
                         model[field] = dtype
                         continue
                     elif current_dtype != dtype and dtype != "NULL":
-                        print(payload)
-                        print(current_dtype, dtype)
                         raise ValueError("datatypes not the same all along the dataset")
 
         if "id" not in model.keys():

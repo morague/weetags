@@ -18,12 +18,13 @@ def validate_elm_type(instance, attribute, value):
         raise ValueError("not good element type")
 
 def validate_conds(instance, attribute, value):
+    print(value)
     if value is None:
         return
 
     for cond in value:
         if (
-            not isinstance(cond, tuple)
+            not (isinstance(cond, tuple) or isinstance(cond, list))
             or len(cond) != 3
             or any([not isinstance(cond[i], str) for i in range(2)])
             ):
