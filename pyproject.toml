@@ -6,7 +6,7 @@ authors = ["Romain Viry <rom88.viry@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 sanic = "^23.12.1"
 treelib = "1.6.4"
 pyjwt = "^2.7.0"
@@ -35,7 +35,3 @@ omit = ["tests/*"]
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.pyright]
-venvPath = "/home/morague/.cache/pypoetry/virtualenvs/"
-venv = "weetags-HDC0ld0T-py3.10"
