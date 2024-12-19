@@ -10,7 +10,7 @@ from sanic_ext import openapi
 from typing import Any, Literal, get_args
 
 from weetags.app.authentication.authentication import protected
-from weetags.trees.tree import Tree
+from weetags.tree import Tree
 from weetags.exceptions import TreeDoesNotExist, UnknownRelation, OutputError
 from weetags.app.routes.middlewares import extract_params
 

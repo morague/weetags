@@ -10,7 +10,7 @@ Node = dict[str, Any]
 Nodes = list[Node]
 Conditions = list[list[tuple[str, str, Any] | str] | str]
 
-DTYPES = {"TEXT": str, "INTEGER": int, "JSON": list, "BOOL": bool}
+DTYPES = {"TEXT": str, "INTEGER": int, "JSONLIST": list, "JSON": dict, "BOOL": bool}
 
 # CREATE
 CREATE_TABLE = "CREATE TABLE  IF NOT EXISTS {table_name} ({fields});"
@@ -63,6 +63,10 @@ READ_MANY = "SELECT {fields} FROM {node_table} {joins} {conditions} {order} {axi
 UPDATE = "UPDATE {table_name} SET {setter} {conditions};"
 DELETE = "DELETE FROM {node_table} {conditions};"
 
+CHILDREN_FROM_IDS = "SELECT id, children FROM {table_name} WHERE id IN ({anchors});"
+CHILDREN_FROM_ID = "SELECT id, children FROM {table_name} WHERE id=?;"
+GET_USER = "SELECT username, password_sha256, auth_level, salt, max_age FROM weetags__users WHERE username=?"
+GET_RESTRICTION = "SELECT auth_level FROM weetags__restrictions WHERE tree=? AND blueprint=?"
 
 def pk_to_sql(pk: list[str]) -> str:
     s = ""
@@ -117,13 +121,23 @@ class _SimpleSqlConverter:
     setter: list[tuple[str, Any]] | None = field(default=None, validator=[listOrNone])
     conds: list[tuple[str, str, Any]] | None = field(default=None, validator=[listOrNone])
 
+
+    def _children_from_ids(self) -> tuple[str, list[Any]]:
+        anchors = self.anchors(self.values)
+        stmt = CHILDREN_FROM_IDS.format(table_name=self.table_name, anchors=anchors)
+        return (stmt, self.values)
+
+    def _children_from_id(self) -> tuple[str, list[Any]]:
+        stmt = CHILDREN_FROM_ID.format(table_name=self.table_name)
+        return (stmt, self.values)
+
     def _write_many(self) -> tuple[str, list[list[Any]]]:
         # add validation for columns names ? and table_name ?
 
         if not all([self.table_name, self.target_columns, self.values]):
             raise ValueError()
 
-        columns = " ,".join(self.target_columns) # type: ignore
+        columns = ", ".join(self.target_columns) # type: ignore
         anchors = self.anchors(self.values[0]) # type: ignore
         stmt =  WRITE.format(table_name=self.table_name, col_names=columns, anchors=anchors, on_conflict="")
         return (stmt, self.values) # type: ignore
@@ -138,7 +152,7 @@ class _SimpleSqlConverter:
                 anchors = f"({self.condition_anchor(op, val)})"
                 conditions.append(f"{field} {op} {anchors}")
                 values.append(val)
-            return (' AND '.join(conditions), values)
+            return ("WHERE " + ' AND '.join(conditions), values)
 
         def parse_simple_setter(setter: list[tuple[str, Any]]) -> tuple[str, list[Any]]:
             values, fields = [], []
@@ -159,7 +173,7 @@ class _SimpleSqlConverter:
         """define the right anchor for the given condition operator."""
         anchor = "?"
         if op.lower() == "in" and isinstance(values, list):
-            anchors = ' ,'.join(["?" for _ in range(len(values))])
+            anchors = ", ".join(["?" for _ in range(len(values))])
             anchor = f"({anchors})"
         return anchor
 
@@ -262,7 +276,7 @@ class SqlConverter:
     def delete(self) -> tuple[str, list[Any]]:
         node_table = self.tables["nodes"].name
         conditions, values = self.parse_conditions()
-        stmt = DELETE.format(table_name=node_table, conditions=conditions)
+        stmt = DELETE.format(node_table=node_table, conditions=conditions)
         return (stmt, values)
 
     def update(self) -> tuple[str, list[Any]]:
@@ -273,7 +287,7 @@ class SqlConverter:
             raise ValueError(f"You must Set some pairs of key values to update.")
         setter, svalues = self.update_setter(self.setter)
         conditions, cvalues = self.parse_conditions()
-        stmt = UPDATE.format(table_name=table, setter=setter, conditions=conditions)
+        stmt = UPDATE.format(table_name=table.name, setter=setter, conditions=conditions)
         return (stmt, svalues + cvalues)
 
     def parse_joins(self) -> str:
@@ -333,7 +347,10 @@ class SqlConverter:
                     raise KeyError(f"Unknown Table Field: {f}")
 
                 conditions.append(namespace.where(op, val)[0])
-                values.append(val)
+                if isinstance(val, list):
+                    values.extend(val)
+                else:
+                    values.append(val)
             elif isinstance(cond, str) and cond in ["AND", "OR"]:
                 conditions.append(cond)
             else:

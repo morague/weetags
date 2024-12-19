@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from sqlite3 import Cursor, Row
-from sqlite3 import connect, register_adapter, register_converter
+from sqlite3 import register_adapter, register_converter
 from sqlite3 import PARSE_DECLTYPES
 
 from typing import Any
-
 
 import weetags.engine.sql as sql
 from weetags.engine.sql import _SimpleSqlConverter, SqlConverter, OnConflict
@@ -25,16 +25,18 @@ class TreeEngine:
     tables: dict[str, Any]
     namespaces: dict[str, Any]
 
-    def __init__(self, tree_name: str, database: str = ":memory:", **params) -> None:
+    def __init__(self, tree_name: str, database: str = ":memory:", timeout: float = 5, **params) -> None:
         self.tree_name = tree_name
         self.database = database
         self.params = params
+        self.timeout = timeout
         if database == ":memory":
             self.params.update({"cache":"shared"})
 
-        self.con = connect(self.uri, detect_types=PARSE_DECLTYPES, uri=True)
+        self.con = sqlite3.connect(self.uri, detect_types=PARSE_DECLTYPES, uri=True, timeout=timeout)
         self.cursor = self.con.cursor()
 
+        self.con.execute("PRAGMA foreign_keys=ON;")
         self.con.row_factory = self._record_factory
         register_adapter(list, self._serialize)
         register_adapter(dict, self._serialize)
@@ -45,7 +47,7 @@ class TreeEngine:
         self.namespaces = {}
 
     @classmethod
-    def from_pragma(cls, tree_name: str, database: str = ":memory:", **params) -> TreeEngine:
+    def from_pragma(cls, tree_name: str, database: str = ":memory:", timeout: float = 5, **params) -> TreeEngine:
         engine = cls(tree_name, database, **params)
         engine._build_tree_context(tree_name)
         return engine
@@ -57,21 +59,38 @@ class TreeEngine:
             options = "?" + "&".join([f"{k}={v}" for k,v in self.params.items()])
         return f"file:{self.database}{options}"
 
-    def execute(self, query: str) -> None:
+    def _execute(self, query: str) -> None:
         self.cursor.execute(query)
         self.con.commit()
 
-    def execute_many(self, *queries: str) -> None:
+    def _execute_many(self, *queries: str) -> None:
         for query in queries:
             self.cursor.execute(query)
         self.con.commit()
 
-    def write_one(
+    def _create_tables(self, *tables: SimpleSqlTable) -> None:
+        queries = [table.create_table() for table in tables]
+        self._execute_many(*queries)
+
+    def _create_index(self, table: SimpleSqlTable, field_name: str) -> None:
+        self._execute(table.create_index(field_name))
+
+    def _create_json_extract_column(self, table: SimpleSqlTable, target_field: str, path: str) -> None:
+        self._execute(table.create_json_extract_column(target_field, path))
+
+    def _create_triggers(self, table: SimpleSqlTable, target_field: str,  path: str | None = None) -> None:
+        nodes_table = self.tables["nodes"]
+        self._execute(table.create_insert_trigger(target_field, nodes_table.name, path))
+        self._execute(table.create_update_trigger(target_field, nodes_table.name, path))
+        if path is None:
+            self._execute(table.create_delete_trigger(nodes_table.name))
+
+    def _write_one(
         self,
         table_name: str,
         target_columns: list[str],
         values: list[Any],
-        on_conflict: str,
+        on_conflict: str = "none",
         commit: bool = True
     ) -> None:
         converter = SqlConverter(
@@ -87,12 +106,12 @@ class TreeEngine:
         if commit:
             self.con.commit()
 
-    def write_many(
+    def _write_many(
         self,
         table_name: str,
         target_columns: list[str],
         values: list[list[Any]],
-        on_conflict: OnConflict,
+        on_conflict: str = "none",
         commit: bool = True
     ) -> None:
         converter = SqlConverter(
@@ -108,7 +127,24 @@ class TreeEngine:
         if commit:
             self.con.commit()
 
-    def read_one(
+    def _builder_write_many(
+        self,
+        table_name: str,
+        target_columns: list[str],
+        values: list[list[Any]],
+        commit: bool = True
+        ) -> None:
+        converter = _SimpleSqlConverter(
+            table_name=table_name,
+            target_columns=target_columns,
+            values=values,
+        )
+        stmt, values = converter._write_many()
+        self.con.executemany(stmt, values)
+        if commit:
+            self.con.commit()
+
+    def _read_one(
         self,
         fields: list[str] | None = None,
         conditions: Conditions | None = None,
@@ -126,7 +162,7 @@ class TreeEngine:
         stmt, values = converter.read_one()
         return self.con.execute(stmt, values).fetchone()
 
-    def read_many(
+    def _read_many(
         self,
         fields: list[str] | None = None,
         conditions: Conditions | None = None,
@@ -146,7 +182,7 @@ class TreeEngine:
         stmt, values = converter.read_many()
         return self.con.execute(stmt, values).fetchall()
 
-    def update(
+    def _update(
         self,
         table_name: str,
         setter: list[tuple[str, Any]],
@@ -165,24 +201,8 @@ class TreeEngine:
         if commit:
             self.con.commit()
 
-    def _write_many(
-        self,
-        table_name: str,
-        target_columns: list[str],
-        values: list[list[Any]],
-        commit: bool = True
-        ) -> None:
-        converter = _SimpleSqlConverter(
-            table_name=table_name,
-            target_columns=target_columns,
-            values=values,
-        )
-        stmt, values = converter._write_many()
-        self.con.execute(stmt, values)
-        if commit:
-            self.con.commit()
 
-    def _update(
+    def _builder_update(
         self,
         table_name: str,
         setter: list[tuple[str, Any]],
@@ -200,8 +220,7 @@ class TreeEngine:
         if commit:
             self.con.commit()
 
-
-    def delete(self, conditions: Conditions | None = None, commit: bool = True) -> None:
+    def _delete(self, conditions: Conditions | None = None, commit: bool = True) -> None:
         converter = SqlConverter(
             namespaces=self.namespaces,
             tables=self.tables,
@@ -212,30 +231,68 @@ class TreeEngine:
         if commit:
             self.con.commit()
 
-    def drop(self, table_name: str) -> None:
+    def _drop(self, table_name: str) -> None:
         query = sql.DROP.format(table_name=table_name)
         self.cursor.execute(query)
         self.con.commit()
 
-    def table_info(self, table_name: str) -> list[tuple]:
+    def _table_info(self, table_name: str) -> list[tuple]:
         query = sql.INFO.format(table_name=table_name)
         return self.cursor.execute(query).fetchall()
 
-    def table_fk_info(self, table_name: str) -> list[tuple]:
+    def _table_fk_info(self, table_name: str) -> list[tuple]:
         query = sql.FK_INFO.format(table_name=table_name)
         return self.cursor.execute(query).fetchall()
 
-    def table_size(self, table_name: str) -> int:
+    def _table_size(self, table_name: str) -> int:
         query = sql.TABLE_SIZE.format(table_name=table_name)
         return self.cursor.execute(query).fetchone()[0]
 
-    def max_depth(self, table_name: str) -> int:
+    def _max_depth(self, table_name: str) -> int:
         query = sql.TREE_DEPTH.format(table_name=table_name)
         return self.cursor.execute(query).fetchone()[0]
 
-    def get_tables(self, tree_name: str) -> list[str]:
+    def _get_tables(self, tree_name: str) -> list[str]:
         query = sql.TABLE_NAMES.format(tree_name=tree_name)
         return self.cursor.execute(query).fetchall()
+
+    def _get_children_from_ids(self, nodes_table: str, ids: list[str]) -> list[tuple[str, list[str]]]:
+        converter = _SimpleSqlConverter(table_name=nodes_table, values=ids)
+        query, values = converter._children_from_ids()
+        return self.con.execute(query, values).fetchall()
+
+    def _get_children_from_id(self, nodes_table: str, id: str):
+        converter = _SimpleSqlConverter(table_name=nodes_table, values=[id])
+        query, values = converter._children_from_id()
+        return self.con.execute(query, values).fetchone()
+
+    def _get_user(self, username: str) -> dict[str, Any] | None:
+        return self.con.execute(sql.GET_USER, [username]).fetchone()
+
+    def _get_restriction(self, tree_name: str, blueprint: str) -> dict[str, Any] | None:
+        return self.con.execute(sql.GET_RESTRICTION, [tree_name, blueprint]).fetchone()
+
+    def _add_users(self, *users) -> None:
+        for settings in users:
+            converter = _SimpleSqlConverter(
+                table_name="weetags__users", 
+                target_columns=settings.fields, 
+                values=[settings.values]
+            )
+            stmt, values = converter._write_many()
+            self.con.executemany(stmt, values)
+        self.con.commit()
+
+    def _add_restrictions(self, *restrictions) -> None:
+        for settings in restrictions:
+            converter = _SimpleSqlConverter(
+                table_name="weetags__restrictions", 
+                target_columns=settings.fields, 
+                values=[settings.values]
+            )
+            stmt, values = converter._write_many()
+            self.con.executemany(stmt, values)
+        self.con.commit()
 
     @staticmethod
     def _serialize(data: dict[str, Any] | list[Any]) -> str:
@@ -264,7 +321,7 @@ class TreeEngine:
         self.tables = {}
         self.namespaces = {}
 
-        tables = self.get_tables(tree_name)
+        tables = self._get_tables(tree_name)
         if len(tables) == 0:
             raise ValueError(
                 f"tree: {tree_name} is currently not builded.",
@@ -273,14 +330,14 @@ class TreeEngine:
 
         for table in tables:
             table_name = table[0]
-            info = self.table_info(table_name)
-            fk_info = self.table_fk_info(table_name)
+            info = self._table_info(table_name)
+            fk_info = self._table_fk_info(table_name)
             table_type = table_name.split("__")[1]
 
             table_repr = SimpleSqlTable.from_pragma(table_name, info, fk_info)
             for fname, f in table_repr.iter_fields:
                 current_namespace = self.namespaces.get(fname, None)
-                if table_name not in ["metadata", "nodes"] and fname in ("nid", "elm_idx"):
+                if table_type not in ["metadata", "nodes"] and fname in ("nid", "elm_idx"):
                     continue
                 elif current_namespace is None:
                     self.namespaces[fname] = Namespace(
@@ -292,5 +349,3 @@ class TreeEngine:
                 else:
                     current_namespace.index_table = table_repr.name
             self.tables[table_type] = table_repr
-
-

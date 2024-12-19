@@ -5,7 +5,8 @@ import time
 from sanic import Sanic, response, Request
 from sanic.blueprints import Blueprint
 
-from weetags.app.authentication.authentication import User, Restriction, Authenticator, protected
+from weetags.app.authentication import Authenticator, protected
+from weetags.engine.schema import Restriction, User
 from weetags.exceptions import InvalidLogin, OutatedAuthorizationToken, InvalidToken, AccessDenied, AuthorizationTokenRequired
 
 random.seed(10)
@@ -30,7 +31,7 @@ def app():
     app.blueprint(reader)
     return app
 
-
+@pytest.mark.auth
 def test_users():
     user1 = {
         "username": "admin",
@@ -57,7 +58,7 @@ def test_users():
         u3 = User(**user3)
 
     u4 = User(**user4)
-    assert u4.to_sql() == [
+    assert u4.values == [
         'admin',
         '4a1cebdf32cdb6e13538e665c0586808086d1478a493fc3b7bd37aed49092fe2',
         ['super user'],
@@ -65,7 +66,7 @@ def test_users():
         600
     ]
 
-
+@pytest.mark.auth
 def test_db():
 
     user1 = {
@@ -83,11 +84,11 @@ def test_db():
     }
     restriction1 = {"tree": "topics", "blueprint": "reader", "auth_level": ["admin", "super admin"]}
 
-    auth = Authenticator.initialize(users=[user1, user2], restrictions=[restriction1], db=":memory:")
+    auth = Authenticator.initialize(users=[user1, user2], restrictions=[restriction1], database=":memory:")
 
     user = auth.con.execute("SELECT * FROM weetags__users").fetchone()
     restriction = auth.con.execute("SELECT * FROM weetags__restrictions").fetchone()
-    auth_level =auth.get_restriction("topics", "reader")
+    auth_level =auth._get_restriction("topics", "reader")
     assert user == {
         'username': 'admin',
         'password_sha256': 'a2aaf7d5cc93bfd1d1f885bba96dbf2d20d0db3fa00263ea11a50365f50da80e',
@@ -97,7 +98,7 @@ def test_db():
     }
     assert restriction == restriction1
     assert auth_level == {"auth_level": ["admin", "super admin"]}
-    assert auth.get_user("admin3") == None
+    assert auth._get_user("admin3") == None
 
     user4 = {
             "username": "bbb",
@@ -105,8 +106,8 @@ def test_db():
             "auth_level": ["user"],
             "max_age": 1000
         }
-    auth.add_users(user4)
-    user = auth.get_user("bbb")
+    auth._add_users(User(**user4))
+    user = auth._get_user("bbb")
 
     assert user == {
         "username": "bbb",
@@ -116,6 +117,7 @@ def test_db():
         'max_age': 1000
     }
 
+@pytest.mark.auth
 def test_auth(app):
     user1 = {
         "username": "admin",
@@ -132,7 +134,7 @@ def test_auth(app):
     }
 
     restriction1 = {"tree": "topics", "blueprint": "reader", "auth_level": ["admin", "super admin"]}
-    auth = Authenticator.initialize(users=[user1, user2], restrictions=[restriction1], db=":memory:")
+    auth = Authenticator.initialize(users=[user1, user2], restrictions=[restriction1], database=":memory:")
 
     request, response = app.test_client.get("/topics")
     with pytest.raises(InvalidLogin):
