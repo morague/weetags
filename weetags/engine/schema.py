@@ -85,8 +85,24 @@ class Namespace:
             raise KeyError("__nodes is not joinable")
         return f"JOIN {self.index} ON {to_table}.id = {self.index}.nid"
 
-    def where(self, op: str, value: Any) -> tuple[str, Any]:
-        return ((f"{self.index}.{self.fname} {op} {self._set_anchor(op, value)}", value))
+    def where(self, op: str, values: Any) -> tuple[str, Any]:
+        fname, op, values = self._prepare(op, values)
+        return ((f"{fname} {op} {self._set_anchor(op, values)}", values))
+
+    def _prepare(self, op: str, values: Any) -> tuple[str, Any]:
+        if op.lower() == "ilike" and isinstance(values, list):
+            v = []
+            for val in values:
+                if not isinstance(val, str):
+                    raise ValueError(f"ILIKE operator must compare Strings. `{values}` is not a string")
+                v.append(val.upper())
+            return (f"UPPER({self.index}.{self.fname})", "LIKE", v)
+        elif op.lower() == "ilike" and isinstance(values, str):
+            return (f"UPPER({self.index}.{self.fname})", "LIKE", values.upper())
+        elif op.lower() == "ilike":
+            raise ValueError(f"ILIKE operator must compare Strings. `{values}` is not a string")
+        else:
+            return (f"{self.index}.{self.fname}", op, values)
 
     def _set_anchor(self, op: str, values: Any) -> str:
         if op.lower() == "in" and isinstance(values, list):

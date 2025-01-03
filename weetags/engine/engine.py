@@ -37,6 +37,7 @@ class TreeEngine:
         self.cursor = self.con.cursor()
 
         self.con.execute("PRAGMA foreign_keys=ON;")
+        self.con.execute("PRAGMA case_sensitive_like=ON;")
         self.con.row_factory = self._record_factory
         register_adapter(list, self._serialize)
         register_adapter(dict, self._serialize)

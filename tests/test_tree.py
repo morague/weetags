@@ -36,6 +36,9 @@ def test_node_where(tree: Tree):
     nodes = tree.nodes_where(conditions=[[("parent","=", "Pets"), "AND", ("id","=", "Pet care")]])
     assert nodes == [data.CARE]
 
+    nodes = tree.nodes_where(conditions=[[("id","ILIKE", "pets")]])
+    assert nodes == [data.PETS]
+
     nodes = tree.nodes_where(conditions=[[("parent","=", "Pets"), ("id","=", "Pet care")]])
     assert nodes == [data.CARE]
 

@@ -63,6 +63,7 @@ READ_MANY = "SELECT {fields} FROM {node_table} {joins} {conditions} {order} {axi
 UPDATE = "UPDATE {table_name} SET {setter} {conditions};"
 DELETE = "DELETE FROM {node_table} {conditions};"
 
+SEARCH_SUBQUERY = "id IN ({subquery})"
 CHILDREN_FROM_IDS = "SELECT id, children FROM {table_name} WHERE id IN ({anchors});"
 CHILDREN_FROM_ID = "SELECT id, children FROM {table_name} WHERE id=?;"
 GET_USER = "SELECT username, password_sha256, auth_level, salt, max_age FROM weetags__users WHERE username=?"
@@ -74,6 +75,25 @@ def pk_to_sql(pk: list[str]) -> str:
         s = f"PRIMARY KEY ({', '.join(pk)})"
     return s
 
+class SqlOperator(StrEnum):
+    Eq = "="
+    Diff = "!="
+    Glob = "GLOB"
+    Gt = ">"
+    Ge = ">="
+    Ngt = "!>"
+    Lt = "<"
+    Le = "<="
+    Nlt = "!<"
+    Like = "LIKE"
+    Ilike = "ILIKE"
+    In = "IN"
+    Not_in = "NOT IN"
+    Is = "IS"
+    Is_not = "IS NOT"
+
+    def values():
+        return [s.value for s in SqlOperator]
 
 class OnConflict(StrEnum):
     Update = "update"
@@ -112,7 +132,7 @@ def onConflictOrNone(instance, attribute, value):
 @define(kw_only=True)
 class _SimpleSqlConverter:
     """
-    Works without any namespace nor tables structure. 
+    Works without any namespace nor tables structure.
     Ideally used during building time by the treeBuilder
     """
     table_name: str | None = field(default=None)
@@ -141,12 +161,12 @@ class _SimpleSqlConverter:
         anchors = self.anchors(self.values[0]) # type: ignore
         stmt =  WRITE.format(table_name=self.table_name, col_names=columns, anchors=anchors, on_conflict="")
         return (stmt, self.values) # type: ignore
-    
+
     def _update(self) -> tuple[str, list[Any]]:
         def parse_simple_conditions(conds: list[tuple[str, str, Any]] | None) -> tuple[str, list[Any]]:
             if conds is None:
                 return ("", [])
-                
+
             values, conditions = [], []
             for field, op, val in conds:
                 anchors = f"({self.condition_anchor(op, val)})"
@@ -161,7 +181,7 @@ class _SimpleSqlConverter:
 
         if self.setter is None:
             raise ValueError(f"You must Set some pairs of key values to update.")
-        
+
         conditions, cvalues = parse_simple_conditions(self.conds)
         setter, svalues = parse_simple_setter(self.setter)
         stmt = UPDATE.format(table_name=self.table_name, setter=setter, conditions=conditions)
@@ -275,7 +295,7 @@ class SqlConverter:
 
     def delete(self) -> tuple[str, list[Any]]:
         node_table = self.tables["nodes"].name
-        conditions, values = self.parse_conditions()
+        conditions, values = self.parse_conditions(with_subqueries=True)
         stmt = DELETE.format(node_table=node_table, conditions=conditions)
         return (stmt, values)
 
@@ -317,7 +337,7 @@ class SqlConverter:
             stmts.extend(parse_sequence(sequence))
         return " ".join(list(set(stmts)))
 
-    def parse_conditions(self) -> tuple[str, list[Any]]:
+    def parse_conditions(self, with_subqueries: bool=False) -> tuple[str, list[Any]]:
         """
         a set of conditions is a list of list condition tuple, possibly seperated by AND/OR operators.
         """
@@ -327,7 +347,7 @@ class SqlConverter:
         segments, values = [], []
         for cond in self.conds:
             if isinstance(cond, Sequence) and not isinstance(cond, str):
-                set_of_conds, vals = self.parse_set_of_conditions(cond)
+                set_of_conds, vals = self.parse_set_of_conditions(cond, with_subqueries)
                 segments.append(set_of_conds)
                 values.extend(vals)
             elif isinstance(cond, str) and cond in ["AND", "OR"]:
@@ -337,24 +357,40 @@ class SqlConverter:
         conditions = self.join_conditions(segments, comma=True)
         return (f"WHERE {conditions}", values)
 
-    def parse_set_of_conditions(self, conds: list[tuple[str, str, Any] | str]) -> tuple[str, list[Any]]:
+    def parse_set_of_conditions(self, conds: list[tuple[str, str, Any] | str], with_subqueries: bool=False) -> tuple[str, list[Any]]:
         conditions, values = [], []
         for cond in conds:
-            if isinstance(cond, Sequence) and not isinstance(cond, str):
+            if with_subqueries and isinstance(cond, Sequence) and not isinstance(cond, str):
+                converter = SqlConverter(
+                    namespaces=self.namespaces,
+                    tables=self.tables,
+                    fields=["id"],
+                    conds=[[cond]]
+                )
+                subquery, vals = converter.read_many()
+                stmt = SEARCH_SUBQUERY.format(subquery=subquery.rstrip(";"))
+                conditions.append(stmt)
+                values.extend(vals)
+
+            elif isinstance(cond, Sequence) and not isinstance(cond, str):
                 f, op, val = cond
                 namespace = self.namespaces.get(f, None)
                 if namespace is None:
                     raise KeyError(f"Unknown Table Field: {f}")
+                if op.upper() not in SqlOperator.values():
+                    raise KeyError(f"Unknown Operator: {op}")
 
-                conditions.append(namespace.where(op, val)[0])
+                where, val = namespace.where(op, val)
+                conditions.append(where)
                 if isinstance(val, list):
                     values.extend(val)
                 else:
                     values.append(val)
+
             elif isinstance(cond, str) and cond in ["AND", "OR"]:
                 conditions.append(cond)
             else:
-                raise ValueError()
+                raise ValueError(f"Unknown Condition: {cond}")
         return (self.join_conditions(conditions), values)
 
     def join_conditions(self, segments: list[str], comma: bool = False) -> str:
@@ -385,7 +421,7 @@ class SqlConverter:
             for fname in self.fields:
                 namespace = self.namespaces.get(fname, None)
                 if namespace is None:
-                    raise KeyError(f"Unknown table field {fname}")
+                    raise KeyError(f"Unknown field name: {fname}")
                 fields.append(namespace.select())
         return ", ".join(fields)
 
@@ -418,6 +454,16 @@ class SqlConverter:
             case _:
                 raise ValueError("Axis must be either 1 or 0")
 
+    def update_setter(self, set_values: list[tuple[str, Any]]) -> tuple[str, Any]:
+        values, fields = [], []
+        for fname, val in set_values:
+            namespace = self.namespaces.get(fname, None)
+            if namespace is None:
+                raise KeyError(f"Unknown field name: {fname}")
+            fields.append(f"{fname} = ?")
+            values.append(val)
+        return (", ".join(fields), values)
+
     @staticmethod
     def condition_anchor(op: str, values: Any) -> str:
         """define the right anchor for the given condition operator."""
@@ -431,8 +477,4 @@ class SqlConverter:
     def anchors(values: list[Any]) -> str:
         return ' ,'.join(["?" for _ in range(len(values))])
 
-    @staticmethod
-    def update_setter(set: list[tuple[str, Any]]) -> tuple[str, Any]:
-        values, fields = [], []
-        [(fields.append(f"{field} = ?"), values.append(val)) for field, val in set]
-        return (", ".join(fields), values)
+
