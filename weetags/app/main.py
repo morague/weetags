@@ -19,10 +19,10 @@ from weetags.app.routes.errors import error_handler
 from weetags.app.routes.middlewares import log_entry, log_exit, cookie_token
 
 
-from weetags.trees.tree_builder import TreeBuilder
-from weetags.trees.tree import Tree
+from weetags.tree_builder import TreeBuilder
+from weetags.tree import Tree
 
-from weetags.tools.parsers import get_config
+from weetags.app.parsers import get_config
 from weetags.app.authentication.authentication import Authenticator
 
 TreeSettings = dict[str, Any]

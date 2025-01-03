@@ -7,7 +7,7 @@ from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
-from weetags.trees.tree import Tree
+from weetags.tree import Tree
 from weetags.exceptions import MissingLogin
 from weetags.app.authentication.authentication import Authenticator
 
