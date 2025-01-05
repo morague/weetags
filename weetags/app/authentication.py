@@ -28,8 +28,10 @@ from weetags.exceptions import (
 StrOrPath = str | Path
 Users = Restricions = list[dict[str, Any]] | None
 
+from functools import wraps
 
 def protected(f):
+    @wraps(f)
     async def wrapped(request: Request, *args, **kwargs):
         authenticator: Authenticator = request.app.ctx.authenticator
         if authenticator is None:

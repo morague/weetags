@@ -1,4 +1,6 @@
+from attrs import Attribute
 
+from typing import Any
 
 class WeetagsException(Exception):
     pass
@@ -21,7 +23,19 @@ class TreeDoesNotExist(WeetagsException):
     def __init__(self, name: str, trees: list[str]) -> None:
         trees = ", ".join(trees)
         super().__init__(self.message.format(name=name, trees=trees))
-        
+
+class ParsingError(WeetagsException):
+    message = """Parameter(name: {name}, value: {value}) must be of type: {dtype}"""
+    status = 400
+    def __init__(self, attribute: Attribute, value: Any, dtype_annot: str) -> None:
+        super().__init__(self.message.format(name=attribute.name, value=value, dtype=dtype_annot))
+
+class CoversionError(WeetagsException):
+    message = """Parameter(value: {value}) Cannot be converted into type: {dtype}"""
+    status = 400
+    def __init__(self, value: Any, dtype_annot: str) -> None:
+        super().__init__(self.message.format(value=value, dtype=dtype_annot))
+
 class UnknownRelation(WeetagsException):
     message = """Relation "{relation}" is unknown. possible relations : [{relations}]"""
     status = 400

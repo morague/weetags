@@ -2,50 +2,30 @@ from __future__ import annotations
 
 import sys
 from os import environ
-from typing_extensions import Dict
+from pathlib import Path
 from sanic import Sanic
 from sanic.log import LOGGING_CONFIG_DEFAULTS
 
 from typing import Any, Optional
 
-from weetags.exceptions import TreeDoesNotExist
-
-from weetags.app.routes.base import base
-from weetags.app.routes.show import shower
-from weetags.app.routes.records import records, utils
-from weetags.app.routes.writer import writer
-from weetags.app.routes.login import login
-from weetags.app.routes.errors import error_handler
-from weetags.app.routes.middlewares import log_entry, log_exit, cookie_token
-
-
-from weetags.tree_builder import TreeBuilder
 from weetags.tree import Tree
-
 from weetags.app.parsers import get_config
-from weetags.app.authentication.authentication import Authenticator
+from weetags.tree_builder import TreeBuilder
+from weetags.app.authentication import Authenticator
+from weetags.app.routes import base, shower, records, utils, writer, login
+from weetags.app.middlewares import log_entry, log_exit, cookie_token, error_handler
 
-TreeSettings = dict[str, Any]
-
-
-banner = """
-                     __
- _      _____  ___  / /_____ _____ ______
-| | /| / / _ \/ _ \/ __/ __ `/ __ `/ ___/
-| |/ |/ /  __/  __/ /_/ /_/ / /_/ (__  )
-|__/|__/\___/\___/\__/\__,_/\__, /____/
-                           /____/ v0.5.0
-"""
+Settings = dict[str, Any]
 
 class Weetags(object):
     def __init__(
         self,
         *,
         env: str,
-        trees: dict[str, TreeSettings],
-        sanic: dict[str, Any] = {},
-        logging: Optional[dict[str, Any]] | None = None,
-        authentication: Optional[dict[str, Any]] | None = None
+        trees: dict[str, Settings],
+        sanic: Optional[Settings] | None = None,
+        logging: Optional[Settings] | None = None,
+        authentication: Optional[Settings] | None = None
         ) -> None:
 
         self.env = env
@@ -53,6 +33,8 @@ class Weetags(object):
 
         if not trees:
             raise ValueError("no trees settings")
+        if sanic is None:
+            sanic = {}
 
         self.app = Sanic("Weetags", log_config=self.configurate_logging(logging))
         self.app.config.update({k.upper():v for k,v in sanic.get("app", {}).items()})
@@ -77,11 +59,11 @@ class Weetags(object):
         return weetags.app
 
     def print_banner(self):
-        print(banner)
+        print((Path(__file__).parent / "banner").read_text())
         print(f"Booting {self.env} ENV")
 
-    def register_trees(self, trees_settings: dict[str, TreeSettings]) -> dict[str, Tree]:
-        return {name:TreeBuilder.build_permanent_tree(**settings) for name, settings in trees_settings.items()}
+    def register_trees(self, trees_settings: dict[str, Settings]) -> dict[str, Tree]:
+        return {name:TreeBuilder.build_tree(**settings) for name, settings in trees_settings.items()}
 
     def register_bluprints(self, blueprints: list[str] | None) -> None:
         self.app.blueprint(base)
