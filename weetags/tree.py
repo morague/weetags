@@ -262,11 +262,11 @@ class Tree(TreeEngine):
                 return True
         return False
 
-    def path(self, node: Nid, to: Nid, fields: Optional[Fields] = None) -> Nodes:
+    def path(self, nid: Nid, to: Nid, fields: Optional[Fields] = None) -> Nodes:
         if fields is None:
             fields = []
 
-        from_node = [self.node(node, list(set(["id", "parent"] + fields)))]
+        from_node = [self.node(nid, list(set(["id", "parent"] + fields)))]
         to_node = [self.node(to, list(set(["id", "parent"] + fields)))]
         meetup = False
         while meetup is False:
