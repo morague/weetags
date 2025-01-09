@@ -3,6 +3,7 @@ from __future__ import annotations
 from sanic import Blueprint
 from sanic.request import Request
 from sanic.response import json, text, empty, HTTPResponse, html, JSONResponse
+from sanic_ext import openapi
 
 from typing import Any, Literal, get_args
 
@@ -34,15 +35,21 @@ shower.on_request(extract_params, priority=100)
 utils.on_request(extract_params, priority=100)
 writer.on_request(extract_params, priority=100)
 
-
 @base.get("favicon.ico")
 async def favicon(request: Request):
     return empty()
 
-@base.route("/weetags/info", methods=["GET", "POST"])
-async def info(request: Request):
+@base.route("/weetags/infos", methods=["GET", "POST"])
+async def infos(request: Request):
     trees = request.app.ctx.trees
     return json({"status": 200, "reasons": "OK", "data": {name:tree.info for name,tree in trees.items()}})
+
+@base.route("/weetags/infos/<tree_name:str>", methods=["GET", "POST"])
+async def tree_infos(request: Request, tree_name: str):
+    tree: Tree = request.app.ctx.trees.get(tree_name, None)
+    if tree is None:
+        raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
+    return json({"status": 200, "reasons": "OK", "data": tree.info})
 
 @login.get("login")
 async def login_page(request: Request) -> HTTPResponse:
@@ -252,7 +259,7 @@ async def update_node(request: Request, tree_name:str, nid: str):
 
 @writer.route("append/node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
 @protected
-async def deletes_nodes(request: Request, tree_name: str, nid: str):
+async def append_nodes(request: Request, tree_name: str, nid: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
@@ -263,7 +270,7 @@ async def deletes_nodes(request: Request, tree_name: str, nid: str):
 
 @writer.route("extend/node/<tree_name:str>/<nid:str>", methods=["GET", "POST"])
 @protected
-async def deletes_nodes(request: Request, tree_name: str, nid: str):
+async def extend_node(request: Request, tree_name: str, nid: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
@@ -285,7 +292,7 @@ async def delete_node(request: Request, tree_name:str, nid: str):
 
 @writer.route("delete/nodes/<tree_name:str>", methods=["POST"])
 @protected
-async def deletes_nodes(request: Request, tree_name: str):
+async def deletes_nodes_where(request: Request, tree_name: str):
     tree: Tree = request.app.ctx.trees.get(tree_name, None)
     if tree is None:
         raise TreeDoesNotExist(tree_name, list(request.app.ctx.trees.keys()))
