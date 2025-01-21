@@ -1714,6 +1714,26 @@ dev = ["Jinja2", "black (>=21.4b2)", "coverage", "flake8 (>=3.7.7)", "isort (>=5
 test = ["Jinja2", "coverage", "pytest", "pytest-asyncio", "pytest-cov", "sanic-testing (>=22.9.0)", "tox"]
 
 [[package]]
+name = "sanic-openapi"
+version = "21.12.0"
+description = "Easily document your Sanic API with a UI."
+optional = false
+python-versions = "*"
+files = [
+    {file = "sanic-openapi-21.12.0.tar.gz", hash = "sha256:7cda62234d08c965f739eaac6b059e8f244d87061d97335c57287fd6ae16bf52"},
+    {file = "sanic_openapi-21.12.0-py3-none-any.whl", hash = "sha256:35412cf7c59777c0c6af60967890d30386be40395f69dc50ae88859e9143f484"},
+]
+
+[package.dependencies]
+pyyaml = ">=3.0.0"
+sanic = ">=18.12.0"
+
+[package.extras]
+dev = ["black (==19.3b0)", "coverage (==4.5.3)", "flake8 (==3.7.7)", "isort (==4.3.19)", "pytest (==4.6.2)", "pytest-cov (==2.7.1)", "pytest-html (==1.20.0)", "pytest-runner (==5.1)", "recommonmark (==0.5.0)", "sphinx (==2.1.2)", "sphinx-rtd-theme (==0.4.3)", "tox (==3.12.1)"]
+doc = ["recommonmark (==0.5.0)", "sphinx (==2.1.2)", "sphinx-rtd-theme (==0.4.3)"]
+test = ["coverage (==4.5.3)", "pytest (==4.6.2)", "pytest-cov (==2.7.1)", "pytest-html (==1.20.0)", "pytest-runner (==5.1)", "tox (==3.12.1)"]
+
+[[package]]
 name = "sanic-routing"
 version = "23.12.0"
 description = "Core routing component for Sanic"
@@ -2199,4 +2219,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "c5c3f264d8c9bbc7cd7fe3c2973a80b9352e3cfd5295848b34ba9e5eab3bd3d4"
+content-hash = "d862355fc7a9e6efa49b5fe44955416a841a9f904335afbe9ad7fb6cf5a1d753"
