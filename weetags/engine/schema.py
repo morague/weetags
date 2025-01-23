@@ -151,11 +151,11 @@ class SimpleSqlField:
 
 @define(slots=False)
 class SimpleSqlTable(ABC):
-    name: str = field()
+    _name: str = field()
 
     @classmethod
-    def from_pragma(cls, name: str, table_info: list[tuple], fk_info: list[tuple]) -> SimpleSqlTable:
-        table = cls(name=name)
+    def from_pragma(cls, _name: str, table_info: list[tuple], fk_info: list[tuple]) -> SimpleSqlTable:
+        table = cls(_name)
         fks = {f[3]:f"{f[2]}.{f[4]}" for f in fk_info}
         for f in table_info: # iterate over sql fields
             simple_field = SimpleSqlField(f[1], f[2],pk=bool(f[5]),fk=fks.get(f[1], None))
@@ -181,46 +181,52 @@ class SimpleSqlTable(ABC):
             if f.pk is not False:
                 pk.append(f.name)
         data = ", ".join(fields + [sql.pk_to_sql(pk)] + fk)
-        return sql.CREATE_TABLE.format(table_name=self.name, fields=data)
+        return sql.CREATE_TABLE.format(table_name=self._name, fields=data)
 
     def create_index(self, field_name: str) -> str:
-        return sql.CREATE_INDEX.format(table_name=self.name, field_name=field_name)
+        return sql.CREATE_INDEX.format(table_name=self._name, field_name=field_name)
 
     def create_json_extract_column(self, target_field: str, path: str) -> str:
-        return sql.CREATE_EXTRACT_COLUMN.format(table_name=self.name, target_field=target_field, path=path)
+        return sql.CREATE_EXTRACT_COLUMN.format(table_name=self._name, target_field=target_field, path=path)
 
     def create_insert_trigger(self, target_field: str, target_table: str | None = None, path: str | None = None) -> str:
         if path is not None:
-            trigger = sql.ADD_JSON_TRIGGER.format(table_name=self.name, target_field=target_field, path=path)
+            base = path.split(".")[0]
+            inner_path = ".".join(path.split(".")[1:])
+            fname = path.replace(".", "_")
+            trigger = sql.ADD_JSON_TRIGGER.format(table_name=self._name, target_table=target_table, target_field=fname, base=base, path=inner_path)
         elif path is None and target_table:
-            trigger = sql.ADD_JSONLIST_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=target_field)
+            trigger = sql.ADD_JSONLIST_TRIGGER.format(table_name=self._name, target_table=target_table, target_field=target_field)
         else:
             raise ValueError("Cannot create insert trigger.")
-        return sql.CREATE_TRIGGER.format(table_name=self.name, target_table=target_table, trigger=trigger)
+        return sql.CREATE_TRIGGER.format(table_name=self._name, target_table=target_table, trigger=trigger)
 
     def create_delete_trigger(self, target_table: str) -> str:
-        return sql.DELETE_TRIGGER.format(table_name=self.name, target_table=target_table)
+        return sql.DELETE_TRIGGER.format(table_name=self._name, target_table=target_table)
 
     def create_update_trigger(self, target_field: str, target_table: str | None = None, path: str | None = None) -> str:
-        if path is not None and target_table is None:
-            trigger = sql.UPDATE_JSON_TRIGGER.format(table_name=self.name, target_field=target_field, path=path)
+        if path is not None:
+            base = path.split(".")[0]
+            inner_path = ".".join(path.split(".")[1:])
+            fname = path.replace(".", "_")
+            trigger = sql.UPDATE_JSON_TRIGGER.format(table_name=self._name, target_table=target_table, target_field=fname, base=base, path=inner_path)
         elif path is None and target_table:
-            trigger = sql.UPDATE_JSONLIST_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=target_field)
+            trigger = sql.UPDATE_JSONLIST_TRIGGER.format(table_name=self._name, target_table=target_table, target_field=target_field)
         else:
             raise ValueError("Cannot Create update trigger")
-        return sql.UPDATE_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=target_field, trigger=trigger)
+        return sql.UPDATE_TRIGGER.format(table_name=self._name, target_table=target_table, target_field=target_field, trigger=trigger)
 
 
 @define(slots=False)
 class NodesTable(SimpleSqlTable):
-    name: str = field()
+    _name: str = field()
     id: SimpleSqlField = field(default=SimpleSqlField("id", "TEXT", pk=True, nullable=False, unique=True))
     parent: SimpleSqlField = field(default=SimpleSqlField("parent", "TEXT"))
     children: SimpleSqlField = field(default=SimpleSqlField("children", "JSONLIST", nullable=False))
 
     @classmethod
-    def initialize(cls, name:str, **fields: SimpleSqlField) -> NodesTable:
-        table_name = f"{name}__nodes"
+    def initialize(cls, _name: str, **fields: SimpleSqlField) -> NodesTable:
+        table_name = f"{_name}__nodes"
         table = cls(table_name)
         for k,v in fields.items():
             if k in table.__dict__.keys():
@@ -236,33 +242,33 @@ class NodesTable(SimpleSqlTable):
 
 @define(slots=False)
 class MetadataTable(SimpleSqlTable):
-    name: str = field()
+    _name: str = field()
     nid: SimpleSqlField = field(default=SimpleSqlField("nid", "TEXT", pk=True, unique=True))
     depth: SimpleSqlField = field(default=SimpleSqlField("depth", "INTEGER", nullable=False))
     is_root: SimpleSqlField = field(default=SimpleSqlField("is_root", "BOOL", nullable=False))
     is_leaf: SimpleSqlField = field(default=SimpleSqlField("is_leaf", "BOOL", nullable=False))
 
     @classmethod
-    def initialize(cls, name: str) -> MetadataTable:
-        nodes_table = f"{name}__nodes"
+    def initialize(cls, _name: str) -> MetadataTable:
+        nodes_table = f"{_name}__nodes"
         return cls(
-            name=f"{name}__metadata",
+            f"{_name}__metadata",
             nid=SimpleSqlField("nid", "TEXT", pk=True, fk=f"{nodes_table}.id")
         )
 
 @define(slots=False)
 class IndexTable(SimpleSqlTable):
-    name: str = field()
+    _name: str = field()
     nid: SimpleSqlField = field()
     value: SimpleSqlField = field()
     elm_idx: SimpleSqlField = field(default=SimpleSqlField("elm_idx", "INTEGER", pk=True, nullable=False))
 
     @classmethod
-    def initialize(cls, name: str, field_name: str, field_dtype: str) -> IndexTable:
-        table_name=f"{name}__{field_name}"
-        nodes_table = f"{name}__nodes"
+    def initialize(cls, _name: str, field_name: str, field_dtype: str) -> IndexTable:
+        table_name=f"{_name}__{field_name}"
+        nodes_table = f"{_name}__nodes"
         table = cls(
-            name= table_name,
+            table_name,
             nid= SimpleSqlField("nid", "TEXT", fk=f"{nodes_table}.id", pk=True, nullable=False),
             value= SimpleSqlField(field_name, field_dtype, pk=True)
         )
@@ -270,7 +276,7 @@ class IndexTable(SimpleSqlTable):
 
 @define(slots=False)
 class UsersTable(SimpleSqlTable):
-    name: str = field(default="weetags__users")
+    _name: str = field(default="weetags__users")
     username: SimpleSqlField = field(default=SimpleSqlField("username", "TEXT", pk=True, nullable=False))
     password_sha256: SimpleSqlField = field(default=SimpleSqlField("password_sha256", "TEXT", nullable=False))
     auth_level: SimpleSqlField = field(default=SimpleSqlField("auth_level", "JSONLIST", nullable=False))
@@ -279,7 +285,7 @@ class UsersTable(SimpleSqlTable):
 
 @define(slots=False)
 class RestrictionsTable(SimpleSqlTable):
-    name: str = field(default="weetags__restrictions")
+    _name: str = field(default="weetags__restrictions")
     tree: SimpleSqlField = field(default=SimpleSqlField("tree", "TEXT", pk=True, nullable=False))
     blueprint: SimpleSqlField = field(default=SimpleSqlField("blueprint", "TEXT", pk=True, nullable=False))
     auth_level: SimpleSqlField = field(default=SimpleSqlField("auth_level", "JSONLIST", nullable=False))

@@ -27,13 +27,12 @@ class TreeBuilder(TreeEngine):
         tree_name: str,
         database: Optional[str] = ":memory:",
         data: Optional[Data] = None,
-        model: Optional[dict[str, Any] | None] = None,
         **params: Optional[Any]
         ) -> None:
 
         super().__init__(tree_name, database, **params)
         self._set_loaders(data)
-        self._infer_model(model)
+        self._infer_model(None)
         self._collect_tables()
 
     @classmethod
@@ -42,13 +41,12 @@ class TreeBuilder(TreeEngine):
         tree_name: str,
         database: Optional[str] = ":memory:",
         data: Optional[Data] = None,
-        model: Optional[dict[str, Any] | None] = None,
         indexes: Optional[list[str]] = None,
         read_only: Optional[bool] = False,
         replace: Optional[bool] = False,
         **params: Any
     ) -> Tree:
-        builder = cls(tree_name, database, data, model, **params)
+        builder = cls(tree_name, database, data, **params)
         if (builder.data is None and not builder._get_tables(tree_name)) or (replace and not builder.data):
             raise ValueError("You must initialize the TreeBuilder with a data or a builded database.")
         
@@ -85,10 +83,14 @@ class TreeBuilder(TreeEngine):
                 raise ValueError(f"Building Index: field {fname} does not exist")            
 
             if field.dtype == "JSON":
-                base, path = field.split(".")
-                self._create_json_extract_column(nodes_table, base, path)
-                self._create_triggers(nodes_table, fname.replace(".","_"), path)
-                self._create_index(nodes_table, fname.replace(".","_"))  
+                target = fname.split(".")[0]
+                path_name = fname.replace(".", "_")
+
+                index_table = IndexTable.initialize(self.tree_name, path_name, "TEXT")
+                self.tables[path_name] = index_table
+                self._create_tables(index_table)
+                # self._create_index(index_table, fname)
+                self._create_triggers(index_table, target, fname)
 
             elif field.dtype == "JSONLIST":
                 index_table = IndexTable.initialize(self.tree_name, fname, "TEXT")
@@ -134,8 +136,8 @@ class TreeBuilder(TreeEngine):
         self.con.commit()
 
     def _build_root(self, node: dict[str, Any]) -> None:
-        nodes_table = self.tables["nodes"].name
-        metadata_table = self.tables["metadata"].name
+        nodes_table = self.tables["nodes"]._name
+        metadata_table = self.tables["metadata"]._name
         self.root_id = node["id"]
         self._builder_write_many(nodes_table, list(node.keys()), [list(node.values())])
         self._builder_write_many(metadata_table, ["nid", "depth", "is_root", "is_leaf"], [[node["id"], 0, True, False]])
@@ -146,7 +148,7 @@ class TreeBuilder(TreeEngine):
         parent2children: dict[str, list[str]]
     ) -> tuple[deque, dict[str, list[str]]]:
 
-        nodes_table = self.tables["nodes"].name
+        nodes_table = self.tables["nodes"]._name
         k, v = list(batch[0].keys()), []
         while len(batch) > 0:
             node = batch.popleft()
@@ -160,7 +162,7 @@ class TreeBuilder(TreeEngine):
         self,
         parent2children: dict[str, list[str]]
     ) -> dict[str, list[str]]:
-        nodes_table = self.tables["nodes"].name
+        nodes_table = self.tables["nodes"]._name
         remains = self._get_children_from_ids(nodes_table, list(parent2children.keys()))
         for node in remains:
             new_children = parent2children.pop(node["id"])
@@ -169,8 +171,8 @@ class TreeBuilder(TreeEngine):
         return parent2children
 
     def _build_metadata(self) -> None:
-        nodes_table = self.tables["nodes"].name
-        metadata_table = self.tables["metadata"].name
+        nodes_table = self.tables["nodes"]._name
+        metadata_table = self.tables["metadata"]._name
         root = self._get_children_from_id(nodes_table, self.root_id)
         current_layer, layers_size, queue, values = 1, defaultdict(int), deque(root["children"]), []
         layers_size[current_layer] += len(root["children"])
@@ -199,7 +201,7 @@ class TreeBuilder(TreeEngine):
                 table_name = table[0]
                 info = self._table_info(table_name)
                 fk_info = self._table_fk_info(table_name)
-                tkey = table_name.split("__")[1]                
+                tkey = table_name.split("__")[1]    
                 self.tables[tkey] = SimpleSqlTable.from_pragma(table_name, info, fk_info)
         elif self.model is None:
             raise ValueError("Input data files or a database into the TreeBuilder")
@@ -219,7 +221,8 @@ class TreeBuilder(TreeEngine):
         self.data = []
         for d in data:
             if isinstance(d, dict):
-                self.data.append(Loader(d))
+                self.data.append(Loader(data))
+                break
             elif isinstance(d, str):
                 loader = infer_loader(d)
                 self.data.append(loader(d, strategy))

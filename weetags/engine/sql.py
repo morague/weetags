@@ -18,13 +18,22 @@ CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_{table_name}_{field_name} ON {tab
 CREATE_EXTRACT_COLUMN = "ALTER TABLE {table_name} ADD COLUMN {target_field}_{path} TEXT AS (json_extract({target_field}, '{path}'))"
 
 # TRIGGERS
-ADD_JSON_TRIGGER = "INSERT INTO {table_name}({target_field}_{path}) SELECT j.value FROM json_each(NEW.json, {path}) as j;"
+ADD_JSON_TRIGGER = """\
+INSERT INTO {table_name}({target_field}, nid, elm_idx)
+SELECT json_extract({base}, "$.{path}"), {target_table}.id, 1 FROM {target_table} WHERE {target_table}.id = NEW.id;
+"""
+
+UPDATE_JSON_TRIGGER = """\
+DELETE FROM {table_name} WHERE nid = OLD.id;
+INSERT INTO {table_name}({target_field}, nid, elm_idx)
+SELECT json_extract({base}, "$.{path}"), {target_table}.id, 1 FROM {target_table} WHERE {target_table}.id = NEW.id;
+"""
+
 ADD_JSONLIST_TRIGGER = """\
 INSERT INTO {table_name}({target_field}, nid, elm_idx)
 SELECT j.value, {target_table}.id, j.key FROM {target_table}, json_each(NEW.{target_field}) as j WHERE {target_table}.id = NEW.id;
 """
 
-UPDATE_JSON_TRIGGER = "SET {target_field}_{path} = json_extract(NEW.json, {path});"
 UPDATE_JSONLIST_TRIGGER = """\
 DELETE FROM {table_name} WHERE nid = OLD.id;
 INSERT INTO {table_name}({target_field}, nid, elm_idx)
@@ -233,7 +242,7 @@ class SqlConverter:
         target_table = self.tables.get(self.table_name, None) # type: ignore
         if target_table is None:
             raise KeyError(f"Unknown table type: {self.table_name}")
-        ttable_name = target_table.name
+        ttable_name = target_table._name
         columns = " ,".join(self.target_columns) # type: ignore
         anchors = self.anchors(self.values) # type: ignore
         on_conflict = self.parse_conflict_handling()
@@ -250,7 +259,7 @@ class SqlConverter:
         target_table = self.tables.get(self.table_name, None) # type: ignore
         if target_table is None:
             raise KeyError(f"Unknown table type: {self.table_name}")
-        ttable_name = target_table.name
+        ttable_name = target_table._name
         columns = " ,".join(self.target_columns) # type: ignore
         anchors = self.anchors(self.values[0]) # type: ignore
         on_conflict = self.parse_conflict_handling()
@@ -258,7 +267,7 @@ class SqlConverter:
         return (stmt, self.values) # type: ignore
 
     def read_one(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         fields = self.parse_fields()
         conditions, values = self.parse_conditions()
         joins = self.parse_joins()
@@ -275,7 +284,7 @@ class SqlConverter:
         return (stmt, values)
 
     def read_many(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         fields = self.parse_fields()
         conditions, values = self.parse_conditions()
         joins = self.parse_joins()
@@ -294,7 +303,7 @@ class SqlConverter:
         return (stmt, values)
 
     def delete(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         conditions, values = self.parse_conditions(with_subqueries=True)
         stmt = DELETE.format(node_table=node_table, conditions=conditions)
         return (stmt, values)
@@ -307,7 +316,7 @@ class SqlConverter:
             raise ValueError(f"You must Set some pairs of key values to update.")
         setter, svalues = self.update_setter(self.setter)
         conditions, cvalues = self.parse_conditions()
-        stmt = UPDATE.format(table_name=table.name, setter=setter, conditions=conditions)
+        stmt = UPDATE.format(table_name=table._name, setter=setter, conditions=conditions)
         return (stmt, svalues + cvalues)
 
     def parse_joins(self) -> str:
@@ -319,7 +328,7 @@ class SqlConverter:
             else:
                 fields = sequence
 
-            tnodes = self.tables["nodes"].name
+            tnodes = self.tables["nodes"]._name
             buff = []
             for fname in fields:
                 if fname == "*":
@@ -331,7 +340,7 @@ class SqlConverter:
                     buff.append(namespace.join(tnodes))
             return buff
 
-        tnodes = self.tables["nodes"].name
+        tnodes = self.tables["nodes"]._name
         stmts = [self.namespaces["depth"].join(tnodes)]
         for sequence in [self.conds, self.order_by, self.fields]:
             stmts.extend(parse_sequence(sequence))
