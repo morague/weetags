@@ -136,8 +136,8 @@ class TreeBuilder(TreeEngine):
         self.con.commit()
 
     def _build_root(self, node: dict[str, Any]) -> None:
-        nodes_table = self.tables["nodes"].name
-        metadata_table = self.tables["metadata"].name
+        nodes_table = self.tables["nodes"]._name
+        metadata_table = self.tables["metadata"]._name
         self.root_id = node["id"]
         self._builder_write_many(nodes_table, list(node.keys()), [list(node.values())])
         self._builder_write_many(metadata_table, ["nid", "depth", "is_root", "is_leaf"], [[node["id"], 0, True, False]])
@@ -148,7 +148,7 @@ class TreeBuilder(TreeEngine):
         parent2children: dict[str, list[str]]
     ) -> tuple[deque, dict[str, list[str]]]:
 
-        nodes_table = self.tables["nodes"].name
+        nodes_table = self.tables["nodes"]._name
         k, v = list(batch[0].keys()), []
         while len(batch) > 0:
             node = batch.popleft()
@@ -162,7 +162,7 @@ class TreeBuilder(TreeEngine):
         self,
         parent2children: dict[str, list[str]]
     ) -> dict[str, list[str]]:
-        nodes_table = self.tables["nodes"].name
+        nodes_table = self.tables["nodes"]._name
         remains = self._get_children_from_ids(nodes_table, list(parent2children.keys()))
         for node in remains:
             new_children = parent2children.pop(node["id"])
@@ -171,8 +171,8 @@ class TreeBuilder(TreeEngine):
         return parent2children
 
     def _build_metadata(self) -> None:
-        nodes_table = self.tables["nodes"].name
-        metadata_table = self.tables["metadata"].name
+        nodes_table = self.tables["nodes"]._name
+        metadata_table = self.tables["metadata"]._name
         root = self._get_children_from_id(nodes_table, self.root_id)
         current_layer, layers_size, queue, values = 1, defaultdict(int), deque(root["children"]), []
         layers_size[current_layer] += len(root["children"])

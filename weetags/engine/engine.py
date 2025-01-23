@@ -81,9 +81,9 @@ class TreeEngine:
 
     def _create_triggers(self, table: SimpleSqlTable, target_field: str,  path: str | None = None) -> None:
         nodes_table = self.tables["nodes"]
-        self._execute(table.create_insert_trigger(target_field, nodes_table.name, path))
-        self._execute(table.create_update_trigger(target_field, nodes_table.name, path))
-        self._execute(table.create_delete_trigger(nodes_table.name))
+        self._execute(table.create_insert_trigger(target_field, nodes_table._name, path))
+        self._execute(table.create_update_trigger(target_field, nodes_table._name, path))
+        self._execute(table.create_delete_trigger(nodes_table._name))
 
     def _write_one(
         self,
@@ -341,11 +341,11 @@ class TreeEngine:
                     continue
                 elif current_namespace is None:
                     self.namespaces[fname] = Namespace(
-                        table = table_repr.name,
-                        index = table_repr.name,
+                        table = table_repr._name,
+                        index = table_repr._name,
                         fname = fname,
                         ftype = f.dtype
                     )
                 else:
-                    current_namespace.index_table = table_repr.name
+                    current_namespace.index_table = table_repr._name
             self.tables[table_type] = table_repr

@@ -242,7 +242,7 @@ class SqlConverter:
         target_table = self.tables.get(self.table_name, None) # type: ignore
         if target_table is None:
             raise KeyError(f"Unknown table type: {self.table_name}")
-        ttable_name = target_table.name
+        ttable_name = target_table._name
         columns = " ,".join(self.target_columns) # type: ignore
         anchors = self.anchors(self.values) # type: ignore
         on_conflict = self.parse_conflict_handling()
@@ -259,7 +259,7 @@ class SqlConverter:
         target_table = self.tables.get(self.table_name, None) # type: ignore
         if target_table is None:
             raise KeyError(f"Unknown table type: {self.table_name}")
-        ttable_name = target_table.name
+        ttable_name = target_table._name
         columns = " ,".join(self.target_columns) # type: ignore
         anchors = self.anchors(self.values[0]) # type: ignore
         on_conflict = self.parse_conflict_handling()
@@ -267,7 +267,7 @@ class SqlConverter:
         return (stmt, self.values) # type: ignore
 
     def read_one(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         fields = self.parse_fields()
         conditions, values = self.parse_conditions()
         joins = self.parse_joins()
@@ -284,7 +284,7 @@ class SqlConverter:
         return (stmt, values)
 
     def read_many(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         fields = self.parse_fields()
         conditions, values = self.parse_conditions()
         joins = self.parse_joins()
@@ -303,7 +303,7 @@ class SqlConverter:
         return (stmt, values)
 
     def delete(self) -> tuple[str, list[Any]]:
-        node_table = self.tables["nodes"].name
+        node_table = self.tables["nodes"]._name
         conditions, values = self.parse_conditions(with_subqueries=True)
         stmt = DELETE.format(node_table=node_table, conditions=conditions)
         return (stmt, values)
@@ -316,7 +316,7 @@ class SqlConverter:
             raise ValueError(f"You must Set some pairs of key values to update.")
         setter, svalues = self.update_setter(self.setter)
         conditions, cvalues = self.parse_conditions()
-        stmt = UPDATE.format(table_name=table.name, setter=setter, conditions=conditions)
+        stmt = UPDATE.format(table_name=table._name, setter=setter, conditions=conditions)
         return (stmt, svalues + cvalues)
 
     def parse_joins(self) -> str:
@@ -328,7 +328,7 @@ class SqlConverter:
             else:
                 fields = sequence
 
-            tnodes = self.tables["nodes"].name
+            tnodes = self.tables["nodes"]._name
             buff = []
             for fname in fields:
                 if fname == "*":
@@ -340,7 +340,7 @@ class SqlConverter:
                     buff.append(namespace.join(tnodes))
             return buff
 
-        tnodes = self.tables["nodes"].name
+        tnodes = self.tables["nodes"]._name
         stmts = [self.namespaces["depth"].join(tnodes)]
         for sequence in [self.conds, self.order_by, self.fields]:
             stmts.extend(parse_sequence(sequence))

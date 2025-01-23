@@ -59,12 +59,12 @@ class Tree(TreeEngine):
 
     @property
     def tree_size(self) -> int:
-        nodes = self.tables["nodes"].name
+        nodes = self.tables["nodes"]._name
         return self._table_size(nodes)
 
     @property
     def tree_depth(self) -> int:
-        metadata = self.tables["metadata"].name
+        metadata = self.tables["metadata"]._name
         return self._max_depth(metadata)
 
     @property
