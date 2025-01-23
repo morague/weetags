@@ -18,13 +18,22 @@ CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_{table_name}_{field_name} ON {tab
 CREATE_EXTRACT_COLUMN = "ALTER TABLE {table_name} ADD COLUMN {target_field}_{path} TEXT AS (json_extract({target_field}, '{path}'))"
 
 # TRIGGERS
-ADD_JSON_TRIGGER = "INSERT INTO {table_name}({target_field}_{path}) SELECT j.value FROM json_each(NEW.json, {path}) as j;"
+ADD_JSON_TRIGGER = """\
+INSERT INTO {table_name}({target_field}, nid, elm_idx)
+SELECT json_extract({base}, "$.{path}"), {target_table}.id, 1 FROM {target_table} WHERE {target_table}.id = NEW.id;
+"""
+
+UPDATE_JSON_TRIGGER = """\
+DELETE FROM {table_name} WHERE nid = OLD.id;
+INSERT INTO {table_name}({target_field}, nid, elm_idx)
+SELECT json_extract({base}, "$.{path}"), {target_table}.id, 1 FROM {target_table} WHERE {target_table}.id = NEW.id;
+"""
+
 ADD_JSONLIST_TRIGGER = """\
 INSERT INTO {table_name}({target_field}, nid, elm_idx)
 SELECT j.value, {target_table}.id, j.key FROM {target_table}, json_each(NEW.{target_field}) as j WHERE {target_table}.id = NEW.id;
 """
 
-UPDATE_JSON_TRIGGER = "SET {target_field}_{path} = json_extract(NEW.json, {path});"
 UPDATE_JSONLIST_TRIGGER = """\
 DELETE FROM {table_name} WHERE nid = OLD.id;
 INSERT INTO {table_name}({target_field}, nid, elm_idx)

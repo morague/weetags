@@ -83,8 +83,7 @@ class TreeEngine:
         nodes_table = self.tables["nodes"]
         self._execute(table.create_insert_trigger(target_field, nodes_table.name, path))
         self._execute(table.create_update_trigger(target_field, nodes_table.name, path))
-        if path is None:
-            self._execute(table.create_delete_trigger(nodes_table.name))
+        self._execute(table.create_delete_trigger(nodes_table.name))
 
     def _write_one(
         self,

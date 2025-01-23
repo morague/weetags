@@ -191,7 +191,10 @@ class SimpleSqlTable(ABC):
 
     def create_insert_trigger(self, target_field: str, target_table: str | None = None, path: str | None = None) -> str:
         if path is not None:
-            trigger = sql.ADD_JSON_TRIGGER.format(table_name=self.name, target_field=target_field, path=path)
+            base = path.split(".")[0]
+            inner_path = ".".join(path.split(".")[1:])
+            fname = path.replace(".", "_")
+            trigger = sql.ADD_JSON_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=fname, base=base, path=inner_path)
         elif path is None and target_table:
             trigger = sql.ADD_JSONLIST_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=target_field)
         else:
@@ -202,8 +205,11 @@ class SimpleSqlTable(ABC):
         return sql.DELETE_TRIGGER.format(table_name=self.name, target_table=target_table)
 
     def create_update_trigger(self, target_field: str, target_table: str | None = None, path: str | None = None) -> str:
-        if path is not None and target_table is None:
-            trigger = sql.UPDATE_JSON_TRIGGER.format(table_name=self.name, target_field=target_field, path=path)
+        if path is not None:
+            base = path.split(".")[0]
+            inner_path = ".".join(path.split(".")[1:])
+            fname = path.replace(".", "_")
+            trigger = sql.UPDATE_JSON_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=fname, base=base, path=inner_path)
         elif path is None and target_table:
             trigger = sql.UPDATE_JSONLIST_TRIGGER.format(table_name=self.name, target_table=target_table, target_field=target_field)
         else:
