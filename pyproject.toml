@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "weetags"
-version = "0.6.0"
+version = "1.0.0"
 description = "Small and simple permanent tree database builded on top of Sqlite"
 authors = ["Romain Viry <rom88.viry@gmail.com>"]
 readme = "README.md"
@@ -19,9 +19,10 @@ ruff = "^0.2.2"
 safety = "^3.0.1"
 
 [tool.commitizen]
+version = "1.0.0"
 version_files = [
-    "weetags/__version__.py",
-    "pyproject.toml:^version"
+    "weetags/VERSION",
+    "pyproject.toml:^version",
 ]
 
 [tool.pytest.ini_options]
