@@ -166,8 +166,8 @@ def test_draw(tree: Tree):
 @pytest.mark.tree
 def test_add_nodes(tree: Tree):
 
-    node_data = {"id": "TEST", "parent": "Pets", "name_eng": "TEST_ENG"}
-    tree.add_node(node_data)
+    node_data = {"name_eng": "TEST_ENG"}
+    tree.add_node("TEST", "Pets", node_data)
 
     node = tree.node("TEST")
     pnode = tree.node("Pets")
@@ -177,20 +177,17 @@ def test_add_nodes(tree: Tree):
     assert node == res
     assert pnode == pres or pnode == pres2
 
-    # node_data = {"id": "TEST", "parent": "Social services", "name_eng": "TEST_ENG"}
-    # with pytest.raises(sqlite3.IntegrityError):
-    #     node = tree.add_node(node_data)
 
 
 @pytest.mark.tree
 def test_delete_node(tree: Tree):
 
-    node_data = {"id": "TEST", "parent": "Pets", "name_eng": "TEST_ENG"}
-    node_data1 = {"id": "TEST1", "parent": "Pet care", "name_eng": "TEST1_ENG"}
+    node_data = {"name_eng": "TEST_ENG"}
+    node_data1 = {"name_eng": "TEST1_ENG"}
 
     node = tree.node("TEST")
     if node is None:
-        tree.add_node(node_data)
+        tree.add_node("TEST", "Pets", node_data)
 
     tree.delete_node("TEST")
     node = tree.node("TEST")
@@ -198,8 +195,8 @@ def test_delete_node(tree: Tree):
     assert node is None
     assert  "TEST" not in pnode["children"]
 
-    tree.add_node(node_data)
-    tree.add_node(node_data1)
+    tree.add_node("TEST", "Pets", node_data)
+    tree.add_node("TEST1", "Pet care", node_data1)
     tree.delete_node("Pets")
 
 

@@ -285,7 +285,10 @@ class Tree(TreeEngine):
         return from_node[:-1] + to_node[::-1]
 
     @valid_creation
-    def add_node(self, node: Node) -> None:
+    def add_node(self, nid: Nid, parent: Nid | None, node_values: dict[str, Any] | None = None) -> None:
+        node = {"id": nid, "parent": parent}
+        if node_values is not None:
+            node.update(node_values)
         pid = node.get("parent", None)
         if pid is None and self.root_id is not None:
             raise ValueError("tree can only have one root")
@@ -422,7 +425,6 @@ class Tree(TreeEngine):
 
     def _add_children(self, nid: Nid, cnid: Nid) -> Node:
         pnode = self.node(nid, ["id", "depth", "children"])
-
         assert(pnode is not None)
 
         pnode.update({"children": list((set(pnode["children"] + [cnid])))})

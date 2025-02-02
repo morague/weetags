@@ -42,22 +42,25 @@ def infer_dtype(value: Any) -> str:
     return dtype
 
 def valid_creation(f: Callable):
-    def wrapped(*args):
-        tree, node = args
+    def wrapped(tree, nid, parent, node_values):
+        node = {"id": nid, "parent": parent}
+        if node_values is not None:
+            node.update(node_values)
+
         node_table = tree.tables.get("nodes")
         for _, field in node_table.iter_fields:
             value = node.get(field.name, None)
             if field.dtype == "JSON" and value is None:
-                node.update({field.name:{}})
+                node_values.update({field.name:{}})
             elif field.dtype == "JSONLIST" and value is None:
-                node.update({field.name:[]})
+                node_values.update({field.name:[]})
             if value is not None and isinstance(value, DTYPES[field.dtype]) is False:
                 raise ValueError(f"node field {field.name} either doesn't exist or has wrong dtype.")
 
         parent = node.get("parent", False)
         if parent is False: # none  is for root
             raise ValueError(f"A node must have a `parent` field")
-        return f(tree, node)
+        return f(tree, nid, parent, node_values)
     return wrapped
 
 def valid_update(f: Callable):
