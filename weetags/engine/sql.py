@@ -1,6 +1,6 @@
 from attrs import define, field, validators
 from collections.abc import Sequence
-from enum import StrEnum
+from enum import Enum
 
 from typing import Any
 
@@ -84,7 +84,7 @@ def pk_to_sql(pk: list[str]) -> str:
         s = f"PRIMARY KEY ({', '.join(pk)})"
     return s
 
-class SqlOperator(StrEnum):
+class SqlOperator(str, Enum):
     Eq = "="
     Diff = "!="
     Glob = "GLOB"
@@ -104,7 +104,7 @@ class SqlOperator(StrEnum):
     def values():
         return [s.value for s in SqlOperator]
 
-class OnConflict(StrEnum):
+class OnConflict(str, Enum):
     Update = "update"
     Ignore = "ignore"
     Rollback = "rollback"
@@ -114,7 +114,7 @@ class OnConflict(StrEnum):
     NONE = "none"
 
     def sql(self) -> str:
-        if str(self) == "none":
+        if self.value == "none":
             return ""
         return f"OR {str(self).upper()}"
 

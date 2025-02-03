@@ -166,8 +166,8 @@ def test_draw(tree: Tree):
 @pytest.mark.tree
 def test_add_nodes(tree: Tree):
 
-    node_data = {"id": "TEST", "parent": "Pets", "name_eng": "TEST_ENG"}
-    tree.add_node(node_data)
+    node_data = {"name_eng": "TEST_ENG"}
+    tree.add_node(nid="TEST", parent="Pets", node_values=node_data)
 
     node = tree.node("TEST")
     pnode = tree.node("Pets")
@@ -177,20 +177,17 @@ def test_add_nodes(tree: Tree):
     assert node == res
     assert pnode == pres or pnode == pres2
 
-    # node_data = {"id": "TEST", "parent": "Social services", "name_eng": "TEST_ENG"}
-    # with pytest.raises(sqlite3.IntegrityError):
-    #     node = tree.add_node(node_data)
 
 
 @pytest.mark.tree
 def test_delete_node(tree: Tree):
 
-    node_data = {"id": "TEST", "parent": "Pets", "name_eng": "TEST_ENG"}
-    node_data1 = {"id": "TEST1", "parent": "Pet care", "name_eng": "TEST1_ENG"}
+    node_data = {"name_eng": "TEST_ENG"}
+    node_data1 = {"name_eng": "TEST1_ENG"}
 
     node = tree.node("TEST")
     if node is None:
-        tree.add_node(node_data)
+        tree.add_node(nid="TEST", parent="Pets", node_values= node_data)
 
     tree.delete_node("TEST")
     node = tree.node("TEST")
@@ -198,8 +195,8 @@ def test_delete_node(tree: Tree):
     assert node is None
     assert  "TEST" not in pnode["children"]
 
-    tree.add_node(node_data)
-    tree.add_node(node_data1)
+    tree.add_node(nid="TEST", parent="Pets", node_values=node_data)
+    tree.add_node(nid="TEST1", parent="Pet care", node_values=node_data1)
     tree.delete_node("Pets")
 
 
@@ -231,46 +228,46 @@ def test_update_node(tree: Tree):
 
     for payload in [d0, d2, d1, d3, d4, d6]:
         with pytest.raises(KeyError):
-            tree.update_node("Doctor", payload)
+            tree.update_node(nid="Doctor", set_values=payload)
     with pytest.raises(ValueError):
-        tree.update_node("Doctor", d5)
+        tree.update_node(nid="Doctor", set_values=d5)
 
 
     payload = [("alias", ["aaa", "bbb", "ccc"]), ("name_eng", "TEST_UPDATE"), ("name_ukr", "TEST_UKR")]
-    tree.update_node("Doctor", payload)
+    tree.update_node(nid="Doctor", set_values=payload)
     node = tree.node("Doctor")
     assert node["alias"] == payload[0][1] and node["name_eng"] == payload[1][1] and node["name_ukr"] == payload[2][1]
 
     payload = [("alias", ["zzz", "www"])]
-    tree.update_node("Healthcare", payload)
+    tree.update_node(nid="Healthcare", set_values=payload)
     node = tree.node("Healthcare")
     assert node["alias"] == payload[0][1]
 
-    tree.update_nodes_where([[("depth","=",0)]], [("alias", ["ggg", "hhh"])])
+    tree.update_nodes_where(conditions=[[("depth","=",0)]], set_values=[("alias", ["ggg", "hhh"])])
     node = tree.node("topicsRoot")
     assert node["alias"] == ["ggg", "hhh"]
 
-    tree.update_nodes_where([[("depth","=",1)]], [("alias", ["rrr", "sss"])])
+    tree.update_nodes_where(conditions=[[("depth","=",1)]], set_values=[("alias", ["rrr", "sss"])])
     node = tree.node("Healthcare")
     assert node["alias"] == ["rrr", "sss"]
 
 @pytest.mark.tree
 def test_append_node(tree: Tree):
-    tree.append_node("Doctor", "alias", "ddd")
+    tree.append_node(nid="Doctor", field_name="alias", value="ddd")
 
     node = tree.node("Doctor")
     assert node["alias"] == ["aaa", "bbb", "ccc", "ddd"]
 
     with pytest.raises(TypeError):
-        tree.append_node("Doctor", "name_eng", "ddd")
+        tree.append_node(nid="Doctor", field_name="name_eng", value="ddd")
 
 
 
 @pytest.mark.tree
 def test_extend_node(tree: Tree):
-    tree.extend_node("Doctor", "alias", ["eee", "fff", "ggg"])
+    tree.extend_node(nid="Doctor", field_name="alias", values=["eee", "fff", "ggg"])
     node = tree.node("Doctor")
     assert node["alias"] == ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg"]
 
     with pytest.raises(TypeError):
-        tree.extend_node("Doctor", "name_eng", ["ddd"])
+        tree.extend_node(nid="Doctor", field_name="name_eng", values=["ddd"])

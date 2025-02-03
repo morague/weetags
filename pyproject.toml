@@ -1,28 +1,43 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "weetags"
-version = "1.0.0"
+version = "1.0.1"
 description = "Small and simple permanent tree database builded on top of Sqlite"
-authors = ["Romain Viry <rom88.viry@gmail.com>"]
 readme = "README.md"
-packages = [{include = "weetags"}]
+keywords = ["Permanent Tree", "database"]
+authors = [{ name = "Romain Viry", email = "rom88.viry@gmail.com" }]
+maintainers = [{ name = "Romain Viry", email = "rom88.viry@gmail.com" }]
+requires-python = ">=3.8"
+dependencies = ["attrs>=23.2.0"]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-attrs = "^23.2.0"
+[project.urls]
+Source = "https://github.com/morague/weetags"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "==6.2.5"
-pytest-cov = "^3.0.0"
-commitizen = "^2.27.1"
-yamllint = "^1.35.1"
-ruff = "^0.2.2"
-safety = "^3.0.1"
+[project.optional-dependencies]
+test = [
+    "pytest>=6.2.5", 
+    "pytest-cov>=3.0.0"
+]
+dev = [
+    "commitizen>=2.27.1",
+    "yamllint>=1.35.1",
+    "ruff>=0.2.2",
+    "safety >=3.0.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["weetags", "weetags.*"]
+exclude = ["tests.*"]
 
 [tool.commitizen]
-version = "1.0.0"
+version = "1.0.1"
 version_files = [
-    "weetags/VERSION",
     "pyproject.toml:^version",
+    "weetags/VERSION"
 ]
 
 [tool.pytest.ini_options]
@@ -33,7 +48,3 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 omit = ["tests/*"]
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
