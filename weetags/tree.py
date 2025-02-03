@@ -285,7 +285,7 @@ class Tree(TreeEngine):
         return from_node[:-1] + to_node[::-1]
 
     @valid_creation
-    def add_node(self, nid: Nid, parent: Nid | None, node_values: dict[str, Any] | None = None) -> None:
+    def add_node(self, *, nid: Nid, parent: Nid | None, node_values: dict[str, Any] | None = None) -> None:
         node = {"id": nid, "parent": parent}
         if node_values is not None:
             node.update(node_values)
@@ -299,21 +299,21 @@ class Tree(TreeEngine):
             self._add_node(node, pnode["depth"] + 1)
 
     @valid_update
-    def update_node(self, nid: Nid, set_values: Setter) -> None:
+    def update_node(self, *, nid: Nid, set_values: Setter) -> None:
         self._update("nodes", set_values, [[("id", "=", nid)]])
 
     @valid_update
-    def update_nodes_where(self, conditions: Conditions, set_values: Setter) -> None:
+    def update_nodes_where(self, *, conditions: Conditions, set_values: Setter) -> None:
         nids = [n["id"] for n in self.nodes_where(conditions, ["id"])]
         self._update("nodes", set_values, [[("id", "IN", nids)]])
 
     @valid_append
-    def append_node(self, nid: Nid, field_name: str, value: Any) -> None:
+    def append_node(self, *, nid: Nid, field_name: str, value: Any) -> None:
         base_value = self.node(nid, fields=[field_name]).get(field_name)
         self._update("nodes", [(field_name, base_value + [value])], [[("id","=",nid)]])
 
     @valid_append
-    def extend_node(self, nid: Nid, field_name: str, values: list[Any]) -> None:
+    def extend_node(self, *, nid: Nid, field_name: str, values: list[Any]) -> None:
         base_value = self.node(nid, fields=[field_name]).get(field_name)
         self._update("nodes", [(field_name, base_value + values)], [[("id","=",nid)]])
 

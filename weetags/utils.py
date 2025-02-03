@@ -1,7 +1,7 @@
 import sqlite3
 import traceback
 from pathlib import Path
-
+from operator import itemgetter
 from typing import Any, Callable
 
 from weetags.engine.sql import DTYPES
@@ -42,7 +42,8 @@ def infer_dtype(value: Any) -> str:
     return dtype
 
 def valid_creation(f: Callable):
-    def wrapped(tree, nid, parent, node_values):
+    def wrapped(tree, **kwargs):
+        nid, parent, node_values = itemgetter("nid", "parent", "node_values")(kwargs)
         node = {"id": nid, "parent": parent}
         if node_values is not None:
             node.update(node_values)
@@ -60,12 +61,12 @@ def valid_creation(f: Callable):
         parent = node.get("parent", False)
         if parent is False: # none  is for root
             raise ValueError(f"A node must have a `parent` field")
-        return f(tree, nid, parent, node_values)
+        return f(tree, nid=nid, parent=parent, node_values=node_values)
     return wrapped
 
 def valid_update(f: Callable):
-    def wrapped(*args):
-        tree, cond, set_values = args
+    def wrapped(tree, **kwargs):
+        set_values = itemgetter("set_values")(kwargs)
         node_table = tree.tables.get("nodes")
         meta_table = tree.tables.get("metadata")
         for k,v in set_values:
@@ -74,12 +75,12 @@ def valid_update(f: Callable):
                 raise KeyError(f"You cannot update the following fields: [`id`, `nid`, `parent`, `children`, `depth`, `is_root`, `is_leaf`]")
             if field is None or isinstance(v, DTYPES[field.dtype]) is False:
                 raise ValueError(f"node field {k} either doesn't exist or has wrong dtype.")
-        return f(tree, cond, set_values)
+        return f(tree, **kwargs)
     return wrapped
 
 def valid_append(f: Callable):
-    def wrapped(*args):
-        tree, cond, fname, values = args
+    def wrapped(tree, **kwargs):
+        fname = itemgetter("field_name")(kwargs)
         node_table = tree.tables.get("nodes")
         meta_table = tree.tables.get("metadata")
         field = getattr(node_table, fname, None) or getattr(meta_table, fname, None)
@@ -87,7 +88,7 @@ def valid_append(f: Callable):
             raise KeyError(f"You cannot update the following fields: [`id`, `nid`, `parent`, `children`, `depth`, `is_root`, `is_leaf`]")
         if field is None or field.dtype not in ["JSON","JSONLIST"]:
             raise TypeError("field_name must reference field containing a collection such as a list or a dict")
-        return f(tree, cond, fname, values)
+        return f(tree, **kwargs)
     return wrapped    
 
 
