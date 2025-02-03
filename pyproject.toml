@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "weetags"
-version = "1.0.0"
+version = "1.0.1"
 description = "Small and simple permanent tree database builded on top of Sqlite"
 readme = "README.md"
 keywords = ["Permanent Tree", "database"]
@@ -34,7 +34,7 @@ include = ["weetags", "weetags.*"]
 exclude = ["tests.*"]
 
 [tool.commitizen]
-version = "1.0.0"
+version = "1.0.1"
 version_files = [
     "pyproject.toml:^version",
     "weetags/VERSION"
