@@ -27,6 +27,9 @@ from weetags.app.authentication.authentication import Authenticator
 
 TreeSettings = dict[str, Any]
 
+from sanic.worker.manager import WorkerManager
+
+WorkerManager.THRESHOLD = 2400
 
 banner = """
                      __
@@ -53,7 +56,7 @@ class Weetags(object):
 
         if not trees:
             raise ValueError("no trees settings")
-
+        
         self.app = Sanic("Weetags", log_config=self.configurate_logging(logging))
         self.app.config.update({k.upper():v for k,v in sanic.get("app", {}).items()})
         self.register_bluprints(sanic.get("blueprints", None))
