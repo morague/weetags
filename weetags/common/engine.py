@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from functools import wraps
-from sqlalchemy import MetaData, Table, Column
+from sqlalchemy import MetaData, Table, Column, null
 from sqlalchemy import create_engine, select, insert, update, delete, text, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema
@@ -10,6 +10,8 @@ from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator
 
+from weetags.common.types import AcceptedFieldType
+from weetags.common.configs import FieldType
 from weetags.common.uri import EngineURI
 from weetags.common.query import QueryBuilder
 
@@ -139,6 +141,40 @@ class Engine:
         with self.sessionmaker() as session:
             session.execute(stmt)
             session.commit()
+
+
+
+    # SIMPLE TABLE ALTERATION
+    def _add_field(
+        self, 
+        tree: str, 
+        name: str, 
+        dtype: AcceptedFieldType, 
+        nullable: bool = True, 
+        unique: bool = False, 
+        index: bool = False
+    ) -> None:
+        table = self._get_table(f"_{tree}_metadata")
+        if table is None:
+            raise KeyError(f"Unknown tree name: {tree}")
+
+        field_type = FieldType.from_value(dtype)
+        table.append_column(Column(name, field_type.into_sqlalchemy(), nullable=nullable, unique=unique, index=index))
+
+    def _remove_field(self, tree: str, name: str) -> None:
+        table = self._get_table(f"_{tree}_metadata")
+        if table is None:
+            raise KeyError(f"Unknown tree name: {tree}")
+
+        field = table._columns.get(name, None)
+        if field is None:
+            raise KeyError(f"Unknown field name: {name}")
+
+        table._columns.remove(field)
+
+
+
+
 
     @structured
     def _update_topology(self, nids: list[int], values: dict[str, Any]) -> None:
