@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import Index
 from sqlalchemy.schema import CreateIndex, DropIndex
 
@@ -23,14 +25,18 @@ class Alteration:
         name: str, 
         dtype: AcceptedFieldType, 
         nullable: bool = True, 
-        unique: bool = False, 
+        unique: bool = False,
+        default: Any = None
     ) -> None:
         if name in TreeTopologyDefinition().namespace:
             raise KeyError(f"Field name: {name} is a reserved namespace.")
         if name in self._engine._metadata.columns.keys():
             raise KeyError(f"Field name: {name} already exist")
+        if nullable is False and default is None:
+            raise ValueError("New fields require either to be nullable or to have a default value")
+
         field_type = FieldType.from_value(dtype)
-        opts = " ".join([o[0] for o in [("NULLABLE", nullable), ("UNIQUE",unique)] if o[1]])
+        opts = " ".join([o[0] for o in [("NULLABLE", nullable), ("UNIQUE",unique), (f"DEFAULT {default}", default)] if o[1]])
         stmt = f"ALTER TABLE _{self.tree_name}_metadata ADD COLUMN {name} {field_type.name} {opts};"
         self._engine.execute_statement(stmt)
 
