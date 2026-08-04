@@ -10,6 +10,11 @@ from typing import Any
 
 
 class CacheEngine(ABC):
+
+    @property
+    def name(self) -> str:
+        return "base"
+
     @abstractmethod
     def set(self, key: str, value: Any) -> None:
         raise NotImplementedError()
@@ -29,6 +34,10 @@ class LocalCacheEngine(CacheEngine):
     def __init__(self, **opts):
         self.cache = {}
 
+    @property
+    def name(self) -> str:
+        return "local"
+
     def set(self, key: str, value: Any) -> None:
         self.cache.update({key:value})
 
@@ -43,6 +52,10 @@ class MemcachedCacheEngine(CacheEngine):
 
     def __init__(self, server: str, workers: int = 4, **opts):
         self.client = PooledClient(server, serde=serde.pickle_serde, max_pool_size=workers)
+
+    @property
+    def name(self) -> str:
+        return "memcached"
 
     def set(self, key: str, value: Any) -> None:
         self.client.set(key, value, noreply=True)

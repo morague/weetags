@@ -36,6 +36,12 @@ class NodePath:
     def contains_subpath(self, path: str) -> bool:
         return path in self.path
 
+    def distance(self, name: str, other: str) -> int:
+        print(self.nodes)
+        name_pos = self.nodes.index(name)
+        other_pos = self.nodes.index(other)
+        return abs(name_pos - other_pos)
+
     @validate_fix
     def suffix(self, size: int, /) -> str:  
         index = len(self.nodes) - size

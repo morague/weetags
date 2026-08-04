@@ -32,8 +32,7 @@ class Node:
     path: str
     parent: str
     children: list[str]
-
-    depth: int
+    level: int
 
     _tree: str
     _engine: TreeEngine
@@ -70,10 +69,6 @@ class Node:
             self.push(name)
         elif name in self.metadata_keys:
             self.__dict__["_modified"] = True
-
-    @property
-    def level(self) -> int:
-        return len(self.path.split("."))
 
     @property
     def degree(self) -> int:

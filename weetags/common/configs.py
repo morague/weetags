@@ -13,7 +13,7 @@ from sqlalchemy import (
     Boolean,
 )
 
-from typing import Any
+from typing import Any, Type
 
 from weetags.common.loaders import ConfigLoader, Loader, select_loader
 from weetags.common.utils import path_converter
@@ -25,6 +25,7 @@ class FieldType(str, Enum):
     BOOL = "bool"
     JSON = "json"
     DATETIME = "datetime"
+    UNKNOWN = "unknown"
 
     @classmethod
     def from_value(cls, value: str) -> FieldType:
@@ -33,7 +34,7 @@ class FieldType(str, Enum):
                 return e
         raise ValueError(f"Unknown `{cls}` value: {value}")
 
-    def into_sqlalchemy(self) -> TypeEngine:
+    def into_sqlalchemy(self) -> Type[TypeEngine]:
         match self.value:
             case "integer":
                 return Integer
@@ -45,7 +46,24 @@ class FieldType(str, Enum):
                 return Boolean
             case "json":
                 return JSON
+            case "unknown":
+                raise ValueError("Unknown Field type")
 
+    @classmethod
+    def from_sqlalchemy(cls, value: TypeEngine) -> FieldType:
+        match type(value).__name__:
+            case "INTEGER":
+                return FieldType.INTEGER
+            case "TEXT":
+                return FieldType.TEXT
+            case "BOOLEAN":
+                return FieldType.BOOL
+            case "DATETIME":
+                return FieldType.DATETIME
+            case "JSON":
+                return FieldType.JSON
+            case _:
+                return FieldType.UNKNOWN
 
 @define(frozen=True)
 class FieldDefinition:
