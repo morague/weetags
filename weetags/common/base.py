@@ -21,6 +21,7 @@ class TreeTopologyDefinition(object):
         Column("parent", Integer, nullable=True),
         Column("children", JSON, nullable=False),
         Column("path", Text, unique=True, nullable=False, index=True),
+        Column("level", Integer, nullable=False)
     ]
 
     @property
@@ -29,7 +30,7 @@ class TreeTopologyDefinition(object):
 
     @property
     def generated_keys(self) -> list[str]:
-        return ["id", "children", "path"]
+        return ["id", "children", "path", "level"]
     
     @property
     def base_keys(self) -> list[str]:
@@ -42,28 +43,25 @@ class TreeTopologyDefinition(object):
 class TreeMetadataDefinition:
     fk: list[str] = ["id"]
 
-    def generate_columns(self, fields: list[FieldDefinition], core: Table) -> list[Column]:
+    def generate_columns(self, fields: list[FieldDefinition], topology: Table) -> list[Column]:
         columns = [
-            Column("id", Integer, ForeignKey(core.c.id, ondelete="CASCADE"), primary_key=True)
+            Column("id", Integer, ForeignKey(topology.c.id, ondelete="CASCADE"), primary_key=True)
         ]
         [columns.append(c.into_column()) for c in fields]
         return columns
 
 class TreeViewDefinition:
-    STMT = "{create} main.{name} ({view_fields}) AS SELECT {base_fields} FROM {core_name} AS c JOIN {meta_name} AS m on m.id = c.id;"
+    STMT = "{create} main.{name} AS SELECT t.name, t.path, t.parent, t.children, t.level, m.* FROM {topology_name} AS t JOIN {meta_name} AS m on m.id = t.id;"
 
     def __init__(self, dialect: str) -> None:
         self.dialect = dialect
         
-    def render_view_query(self, name: str, core: Table, metadata: Table) -> str:
+    def render_view_query(self, name: str, topology: Table, metadata: Table) -> str:
         create = self._create()
-        base_fields, view_fields = self._fields(core, metadata)
         return TreeViewDefinition.STMT.format(
             create=create, 
-            name=name, 
-            view_fields=", ".join(view_fields), 
-            base_fields=", ".join(base_fields), 
-            core_name=core.name, 
+            name=name,  
+            topology_name=topology.name, 
             meta_name=metadata.name
         )
     
@@ -76,11 +74,3 @@ class TreeViewDefinition:
             case _:
                 raise ValueError(f"Unknown database dialect: {self.dialect}")
         return create
-
-    def _fields(self, core: Table, metadata: Table) -> tuple[list[str], list[str]]:
-        core_fields = [f.name for f in core.columns]
-        meta_fields = [f.name for f in metadata.columns if f.name not in TreeMetadataDefinition.fk]
-
-        view_fields = core_fields + meta_fields
-        base_fields = [f"c.{n}" for n in core_fields] + [f"m.{n}" for n in meta_fields]
-        return (base_fields, view_fields)

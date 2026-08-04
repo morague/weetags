@@ -209,7 +209,8 @@ class Importer:
         node_name = data["name"]
         payload = {
             "children": self._parent2children.get(node_name, []),
-            "path": self._name2path.get(node_name)
+            "path": self._name2path.get(node_name),
+            "level": len(self._name2path[node_name].split(".")) - 1
         } 
         [payload.update({f.name: data.get(f.name, None)}) for f in self.tree_topology.columns.values() if f.name not in TreeTopologyDefinition().generated_keys]
         return payload
