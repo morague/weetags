@@ -73,12 +73,13 @@ class FieldDefinition:
     unique: bool = field(default=False, validator=[validators.instance_of(bool)])
     nullable: bool = field(default=False, validator=[validators.instance_of(bool)])
     index: bool = field(default=False, validator=[validators.instance_of(bool)])
+    default: Any = field(default=None)
 
     def into_column(self) -> Column:
         if self.primary_key:
             return Column(self.name, self.type.into_sqlalchemy(), primary_key=self.primary_key)
         else:
-            return Column(self.name, self.type.into_sqlalchemy(), unique=self.unique, nullable=self.nullable, index=self.index)
+            return Column(self.name, self.type.into_sqlalchemy(), unique=self.unique, nullable=self.nullable, index=self.index, default=self.default)
 
 
 @define(frozen=True)
