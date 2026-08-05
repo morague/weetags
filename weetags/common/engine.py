@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from functools import wraps
-from sqlalchemy import MetaData, Table, Column, null
+from sqlalchemy import MetaData, Table, Column, Index, UniqueConstraint
 from sqlalchemy import create_engine, select, insert, update, delete, text, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema
@@ -79,8 +79,17 @@ class Engine:
         matches = [bool(re.search(pattern, k)) for k in self.metadata.tables.keys()]
         return len(self.metadata.tables.keys()) > 0 and len(list(filter(lambda x: x is True, matches))) >=3
 
+    def _drop(self, table_name: str) -> None:
+        table = self.metadata.tables.get(table_name, None)
+        if table is None:
+            raise KeyError(f"Unknown table name: {table_name}")
+        table.drop(self.engine)
+
     def _drop_tree(self, name: str) -> None:
-        ...
+        self.metadata.reflect(self.engine)
+        structure = [name, f"_{name}_metadata", f"_{name}_topology"]
+        for table_name in structure:
+            self._drop(table_name)
 
     def _roots(self, tree: str) -> list[dict[str, Any]]:
         table = self.metadata.tables.get(tree)
@@ -336,14 +345,28 @@ class Engine:
             session.commit()
         return list(res)
 
-    def _create_table(self, name: str, columns: list[Column], exist_ok: bool = True) -> Table:
+    def _create_table(
+        self, 
+        name: str, 
+        columns: list[Column], 
+        indexes: list[Index] | None = None, 
+        unique_constraints: list[UniqueConstraint] | None = None, 
+        exist_ok: bool = True
+    ) -> Table:
         exist = self.metadata.tables.get(name, None)
         if exist is not None and exist_ok is False:
             raise ValueError(f"Table {name} already exist.")
         elif exist is not None:
             return exist
 
-        table = Table(name, self.metadata, schema="main", *columns)
+        if indexes is None:
+            indexes = []
+
+        if unique_constraints is None:
+            unique_constraints = []
+
+        print(columns)
+        table = Table(name, self.metadata, schema="main", *columns, *indexes, *unique_constraints)
         table.create(self.engine)
         return table
 

@@ -125,6 +125,7 @@ class TreeConfig:
     fields: list[FieldDefinition] = field()
     data: DataDefinition | None = field()
     indexes: list[list[str]] | None = field()
+    unique_constraints: list[list[str]] | None = field()
 
     def __attrs_post_init__(self) -> None:
         if self.indexes is None:

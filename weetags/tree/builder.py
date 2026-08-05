@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from os import uname
 from pathlib import Path
-from sqlalchemy import Table
+from sqlalchemy import Table, Index, UniqueConstraint
 
 from typing import Any, Literal
 
@@ -62,6 +63,7 @@ class TreeBuilder:
         data: list[dict[str, Any]] | None = None,
         keymap: dict[str, Any] | None = None,
         indexes: list[list[str]] | None = None,
+        unique_constraints: list[list[str]] | None = None,
 
         not_exist: bool = False,
         recreate: bool = False,
@@ -76,7 +78,7 @@ class TreeBuilder:
             return Tree.from_engine(name, self.engine)
 
         if skip_init is False:
-            tree = self.initialize_tree(name, fields)
+            tree = self.initialize_tree(name, fields, indexes, unique_constraints, on_change)
         if data is not None and skip_import is False:
             data_definition = DataDefinition(data=data, keymap=keymap)
             tree = self.populate_tree(name, data_definition, on_collision)
@@ -105,16 +107,23 @@ class TreeBuilder:
 
         # BUILD PROCESS
         if skip_init is False:
-            self.initialize_tree(configs.name, configs.fields, on_change)
+            self.initialize_tree(configs.name, configs.fields, configs.indexes, configs.unique_constraints, on_change)
 
         if skip_import is False and configs.data is not None:
             self.populate_tree(configs.name, configs.data, on_collision)
         return Tree.from_engine(configs.name, self.engine)
 
-    def initialize_tree(self, name: str, fields: list[FieldDefinition], on_change: OnChange = "raise") -> Tree:
+    def initialize_tree(
+        self, 
+        name: str, 
+        fields: list[FieldDefinition], 
+        indexes: list[list[str]] | None = None,
+        unique_constraints: list[list[str]] | None = None,
+        on_change: OnChange = "raise"
+    ) -> Tree:
         self.engine._create_schema()
         tree_topology = self._intialize_tree_topology(name)
-        tree_metadata = self._intialize_tree_metadata(name, fields, tree_topology)
+        tree_metadata = self._intialize_tree_metadata(name, fields, tree_topology, indexes, unique_constraints)
         self._initialize_tree_view(name, tree_topology, tree_metadata)
         return Tree.from_engine(name, self.engine)
 
@@ -133,13 +142,30 @@ class TreeBuilder:
         table = self.engine._create_table(f"_{name}_topology", TreeTopologyDefinition.columns, exist_ok=True)
         return table
 
-    def _intialize_tree_metadata(self, name: str, fields: list[FieldDefinition], topology: Table) -> Table:
+    def _intialize_tree_metadata(
+        self, 
+        name: str, 
+        fields: list[FieldDefinition], 
+        topology: Table,
+        indexes: list[list[str]] | None = None,
+        unique_constraints: list[list[str]] | None = None
+    ) -> Table:
         for f in fields:
             if f.name in TreeTopologyDefinition().namespace:
                 raise ValueError(f"fields name already in use: {TreeTopologyDefinition().namespace}.")
         
         columns = TreeMetadataDefinition().generate_columns(fields, topology)
-        table = self.engine._create_table(f"_{name}_metadata", columns, exist_ok=True)
+
+
+        builded_indexes = self._indexes(name, fields, indexes)
+        builded_uconstraint = self._unique_constraints(name, fields, unique_constraints)
+        table = self.engine._create_table(
+            f"_{name}_metadata", 
+            columns, 
+            indexes=builded_indexes, 
+            unique_constraints=builded_uconstraint,
+            exist_ok=True
+        )
         return table
     
     def _initialize_tree_view(self, name: str, topology: Table, metadata: Table) -> None:
@@ -171,3 +197,41 @@ class TreeBuilder:
             raise NotImplementedError()
         
         return True
+
+    def _indexes(
+        self, 
+        name: str, 
+        fields: list[FieldDefinition], 
+        indexes: list[list[str]] | None = None
+    ) -> list[Index]:
+        if indexes is None:
+            return []
+
+        i = []
+        field_names = [f.name for f in fields]
+        for index in indexes:
+            valid = all([fname in field_names for fname in index])
+            if valid:
+                index_name = f"_{name}_metadata_" + "_".join(index) + "_index"
+                ii = Index(index_name, *index)
+                i.append(ii)
+        return i
+
+    def _unique_constraints(
+        self, 
+        name: str, 
+        fields: list[FieldDefinition], 
+        unique_constraints: list[list[str]] | None = None
+    ) -> list[UniqueConstraint]:
+        if unique_constraints is None:
+            return []
+
+        constraints = []
+        field_names = [f.name for f in fields]
+        for constraint in unique_constraints:
+            valid = all([fname in field_names for fname in constraint])
+            if valid:
+                constraint_name = f"_{name}_metadata_" + "_".join(constraint) + "_unique"
+                uc = UniqueConstraint(*constraint, name=constraint_name)
+                constraints.append(uc)
+        return constraints

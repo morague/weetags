@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Generator
 
-from sqlalchemy import values
-
 from weetags.common import Engine, EngineURI
 from weetags.common.configs import FieldType
 from weetags.common.types import TraversalOrder, OnCollision
