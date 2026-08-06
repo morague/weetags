@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+from logging import config
 from os import uname
 from pathlib import Path
 from sqlalchemy import Table, Index, UniqueConstraint
 
-from typing import Any, Literal
+from typing import Any, Literal, Type
 
 from weetags.common import EngineURI, Engine
 from weetags.common.types import OnChange, OnCollision
 from weetags.common.base import TreeTopologyDefinition, TreeMetadataDefinition, TreeViewDefinition
-from weetags.common.configs import DataDefinition, FieldDefinition, TreeConfig
-from weetags.common.loaders import Loader
+import weetags.common.configs as conf
+from weetags.common.loaders import Loader, YamlLoader
 from weetags.tree.importer import Importer
 from weetags.tree.tree import Tree
+from weetags.tree.tree_cache import TreeCache
 
 
 """
@@ -56,10 +58,49 @@ class TreeBuilder:
         engine = Engine.from_uri(uri)
         return cls(engine)
 
-    def build(
-        self, 
+
+
+    @classmethod
+    def build_from_tree_file(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
+        configs = conf.TreeConfig.parse_file(path, loader)
+
+        kwargs = configs.tree_inline
+        cache, c = None, kwargs.pop("cache", None)
+        if c is not None:
+            cache = TreeCache(**c)
+
+        builder = cls.from_uri(configs.uri)
+        return builder._build(configs, cache)
+
+
+    def build_from_file(
+        self,
         name: str, 
-        fields: list[FieldDefinition], 
+        fields: list[conf.FieldDefinition], 
+        data_path: Path | str | None = None,
+        keymap: dict[str, Any] | None = None,
+        indexes: list[list[str]] | None = None,
+        unique_constraints: list[list[str]] | None = None,
+
+        not_exist: bool = False,
+        recreate: bool = False,
+        on_change: OnChange = "raise",
+        on_collision: OnCollision = "raise",
+        skip_init: bool = False,
+        skip_import: bool = False,
+
+        cache: TreeCache | None = None
+    ) -> Tree:
+        s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
+        b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
+        d = conf.DataDefinition(path=data_path, keymap=keymap)
+        configs = conf.TreeConfig(name, self.engine.uri, "tree", cache=None, structure=s, data=d, builder=b)
+        return self._build(configs, cache)
+
+    def build(
+        self,
+        name: str, 
+        fields: list[conf.FieldDefinition], 
         data: list[dict[str, Any]] | None = None,
         keymap: dict[str, Any] | None = None,
         indexes: list[list[str]] | None = None,
@@ -71,55 +112,50 @@ class TreeBuilder:
         on_collision: OnCollision = "raise",
         skip_init: bool = False,
         skip_import: bool = False,
+
+        cache: TreeCache | None = None
     ) -> Tree:
+        s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
+        b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
+        d = conf.DataDefinition(data=data, keymap=keymap)
+        configs = conf.TreeConfig(name, self.engine.uri, "tree", cache=None, structure=s, data=d, builder=b)
+        return self._build(configs, cache)
 
-        do = self._handle_existing_structure(name, fields, not_exist, recreate, on_change, skip_init)
+    def _build(self, configs: conf.TreeConfig, cache: TreeCache | None = None) -> Tree:
+        b = configs.builder
+        if b is None:
+            raise ValueError("Builder needs Builder configuration.")
+
+        do = self._check_existing(configs.name, b.not_exist, b.skip_init)
         if do is False:
-            return Tree.from_engine(name, self.engine)
+            return Tree.from_engine(configs.name, self.engine, cache)
 
-        if skip_init is False:
-            tree = self.initialize_tree(name, fields, indexes, unique_constraints, on_change)
-        if data is not None and skip_import is False:
-            data_definition = DataDefinition(data=data, keymap=keymap)
-            tree = self.populate_tree(name, data_definition, on_collision)
+        s = configs.structure
+        if s is None:
+            raise ValueError("Builder needs Structure configuration.")
+        do = self._check_existing_structure(configs.name, s.fields, b.recreate, b.on_change, b.skip_import)
+        if do is False:
+            return Tree.from_engine(configs.name, self.engine, cache)
+
+        if b.skip_init is False:
+            tree = self.initialize_tree(configs.name, s.fields, s.indexes, s.unique_constraints, b.on_change)
+
+        d = configs.data
+        if d and b.skip_import is False:
+            tree = self.populate_tree(configs.name, d, b.on_collision)
         else:
-            tree = Tree.from_engine(name, self.engine)
+            tree = Tree.from_engine(configs.name, self.engine)
+
+        tree.set_cache(cache)
         return tree
-
-    def build_from_file(
-        self, 
-        path: str | Path, 
-        loader: Loader | None = None,
-
-
-        not_exist: bool = False,
-        recreate: bool = False,
-        on_change: OnChange = "raise",
-        on_collision: OnCollision = "raise",
-        skip_init: bool = False,
-        skip_import: bool = False,
-    ) -> Tree:
-  
-        configs = TreeConfig.parse_file(path, loader)
-        do = self._handle_existing_structure(configs.name, configs.fields, not_exist, recreate, on_change, skip_init)
-        if do is False:
-            return Tree.from_engine(configs.name, self.engine)
-
-        # BUILD PROCESS
-        if skip_init is False:
-            self.initialize_tree(configs.name, configs.fields, configs.indexes, configs.unique_constraints, on_change)
-
-        if skip_import is False and configs.data is not None:
-            self.populate_tree(configs.name, configs.data, on_collision)
-        return Tree.from_engine(configs.name, self.engine)
 
     def initialize_tree(
         self, 
         name: str, 
-        fields: list[FieldDefinition], 
+        fields: list[conf.FieldDefinition], 
         indexes: list[list[str]] | None = None,
         unique_constraints: list[list[str]] | None = None,
-        on_change: OnChange = "raise"
+        on_change: OnChange | str= "raise"
     ) -> Tree:
         self.engine._create_schema()
         tree_topology = self._intialize_tree_topology(name)
@@ -127,7 +163,7 @@ class TreeBuilder:
         self._initialize_tree_view(name, tree_topology, tree_metadata)
         return Tree.from_engine(name, self.engine)
 
-    def populate_tree(self, name: str, data: DataDefinition, on_collision: OnCollision = "raise") -> Tree:
+    def populate_tree(self, name: str, data: conf.DataDefinition, on_collision: OnCollision | str = "raise") -> Tree:
         if data.path is None and data.data is None:
             return Tree.from_engine(name, self.engine)
         elif data.path is not None:
@@ -145,7 +181,7 @@ class TreeBuilder:
     def _intialize_tree_metadata(
         self, 
         name: str, 
-        fields: list[FieldDefinition], 
+        fields: list[conf.FieldDefinition], 
         topology: Table,
         indexes: list[list[str]] | None = None,
         unique_constraints: list[list[str]] | None = None
@@ -172,36 +208,49 @@ class TreeBuilder:
         stmt = TreeViewDefinition(self.engine.uri.dialect).render_view_query(name, topology, metadata)
         self.engine.execute_statement(stmt)
 
-    def _handle_existing_structure(
-        self, 
-        name: str, 
-        fields: list[FieldDefinition],
-        not_exist: bool = False, 
-        recreate: bool = False, 
-        on_change: OnChange = "raise", 
-        skip_init: bool = False
-    ) -> bool:
+    def _check_existing(self, name: str, not_exist: bool = False, skip_init: bool = False) -> bool:
         if self.engine.exist(name) and not_exist:
             # tree structure already exist, 
             # building is only done when the structure does NOT exist
             return False
-        
         elif self.engine.exist(name) is False and skip_init:
             raise AssertionError("Tree must be initialized. deactivate builder `skip_init` argument.")
+        return True
 
-        elif self.engine.exist(name) and recreate:
-            # tree structure exist, but force recreate
+    def _check_existing_structure(
+        self, 
+        name: str, 
+        fields: list[conf.FieldDefinition], 
+        recreate: bool = False, 
+        on_change: OnChange | str = "raise", 
+        skip_import: bool = False
+    ) -> bool:
+        if self.engine.exist(name) and recreate:
             self.engine._drop_tree(name)
         elif self.engine.exist(name):
             # TEST STRUCUTURE AGAINST THE NEW ONE. APPLY DEFINED STRATEGY WHEN CHANGES
+            # diff = self compare structure
+            # if diff and on_change == "alter":
+            #     # diff are found we can try to alter inplace structure.
+            #     ...
+            # elif diff and on_change == "recreate":
+            #     # tthre is a diff, we want to drop the tree
+            #     self.engine._drop_tree(name)
+            # elif diff and on_change == "raise":
+            #     # there is a diff and we want to raise
+            #     raise ValueError()
+            # elif diff and on_change == "ignore" and skip_import is False:
+            #      # there is a change, we ignore it, but we want to do the importation step. there will be a conflict...
+            #     raise ValueError()
+            # else:
+            #     raise ValueError()
             raise NotImplementedError()
-        
         return True
 
     def _indexes(
         self, 
         name: str, 
-        fields: list[FieldDefinition], 
+        fields: list[conf.FieldDefinition], 
         indexes: list[list[str]] | None = None
     ) -> list[Index]:
         if indexes is None:
@@ -220,7 +269,7 @@ class TreeBuilder:
     def _unique_constraints(
         self, 
         name: str, 
-        fields: list[FieldDefinition], 
+        fields: list[conf.FieldDefinition], 
         unique_constraints: list[list[str]] | None = None
     ) -> list[UniqueConstraint]:
         if unique_constraints is None:
@@ -235,3 +284,92 @@ class TreeBuilder:
                 uc = UniqueConstraint(*constraint, name=constraint_name)
                 constraints.append(uc)
         return constraints
+
+
+
+
+
+
+    # def _handle_existing_structure(
+    #     self, 
+    #     name: str, 
+    #     fields: list[conf.FieldDefinition],
+    #     not_exist: bool = False, 
+    #     recreate: bool = False, 
+    #     on_change: OnChange = "raise", 
+    #     skip_init: bool = False
+    # ) -> bool:
+    #     if self.engine.exist(name) and not_exist:
+    #         # tree structure already exist, 
+    #         # building is only done when the structure does NOT exist
+    #         return False
+        
+    #     elif self.engine.exist(name) is False and skip_init:
+    #         raise AssertionError("Tree must be initialized. deactivate builder `skip_init` argument.")
+
+    #     elif self.engine.exist(name) and recreate:
+    #         # tree structure exist, but force recreate
+    #         self.engine._drop_tree(name)
+    #     elif self.engine.exist(name):
+    #         # TEST STRUCUTURE AGAINST THE NEW ONE. APPLY DEFINED STRATEGY WHEN CHANGES
+    #         raise NotImplementedError()
+        
+    #     return True
+
+
+    # def build(
+    #     self, 
+    #     name: str, 
+    #     fields: list[conf.FieldDefinition], 
+    #     data: list[dict[str, Any]] | None = None,
+    #     keymap: dict[str, Any] | None = None,
+    #     indexes: list[list[str]] | None = None,
+    #     unique_constraints: list[list[str]] | None = None,
+
+    #     not_exist: bool = False,
+    #     recreate: bool = False,
+    #     on_change: OnChange = "raise",
+    #     on_collision: OnCollision = "raise",
+    #     skip_init: bool = False,
+    #     skip_import: bool = False,
+    # ) -> Tree:
+
+    #     do = self._handle_existing_structure(name, fields, not_exist, recreate, on_change, skip_init)
+    #     if do is False:
+    #         return Tree.from_engine(name, self.engine)
+
+    #     if skip_init is False:
+    #         tree = self.initialize_tree(name, fields, indexes, unique_constraints, on_change)
+    #     if data is not None and skip_import is False:
+    #         data_definition = conf.DataDefinition(data=data, keymap=keymap)
+    #         tree = self.populate_tree(name, data_definition, on_collision)
+    #     else:
+    #         tree = Tree.from_engine(name, self.engine)
+    #     return tree
+
+    # def build_from_file(
+    #     self, 
+    #     path: str | Path, 
+    #     loader: Loader | None = None,
+
+
+    #     not_exist: bool = False,
+    #     recreate: bool = False,
+    #     on_change: OnChange = "raise",
+    #     on_collision: OnCollision = "raise",
+    #     skip_init: bool = False,
+    #     skip_import: bool = False,
+    # ) -> Tree:
+  
+    #     configs = conf.TreeConfig.parse_file(path, loader)
+    #     do = self._handle_existing_structure(configs.name, configs.fields, not_exist, recreate, on_change, skip_init)
+    #     if do is False:
+    #         return Tree.from_engine(configs.name, self.engine)
+
+    #     # BUILD PROCESS
+    #     if skip_init is False:
+    #         self.initialize_tree(configs.name, configs.fields, configs.indexes, configs.unique_constraints, on_change)
+
+    #     if skip_import is False and configs.data is not None:
+    #         self.populate_tree(configs.name, configs.data, on_collision)
+    #     return Tree.from_engine(configs.name, self.engine)

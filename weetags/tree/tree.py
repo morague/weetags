@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Generator, Type
 
 from weetags.common import Engine, EngineURI
-from weetags.common.configs import FieldType
+from weetags.common.loaders import Loader, YamlLoader
+from weetags.common.configs import FieldType, TreeConfig
 from weetags.common.types import TraversalOrder, OnCollision
 from weetags.tree.tree_engine import TreeEngine
 from weetags.common.alteration import Alteration
-from weetags.tree.tree_cache import TreeCache
+from weetags.tree.tree_cache import TreeCache, create_cache_engine
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
 
@@ -174,26 +175,41 @@ class Tree:
         }
 
     @classmethod
-    def initialize(cls, name: str, engine_uri: EngineURI, cache: TreeCache | None = None) -> Tree:
-        engine = TreeEngine.from_uri(name, engine_uri, cache)
+    def initialize(cls, name: str, uri: EngineURI, cache: TreeCache | None = None) -> Tree:
+        engine = TreeEngine.from_uri(name, uri, cache)
         return cls(name, engine)
 
     @classmethod
-    def from_configs(cls, name: str, engine_uri: dict[str, Any], cache: dict[str, Any] | None = None) -> Tree:
+    def from_configs(cls, name: str, uri: dict[str, Any], cache: dict[str, Any] | None = None) -> Tree:
         tree_cache = None
         if cache is not None:
             tree_cache = TreeCache(**cache)
 
-        uri = EngineURI(**engine_uri)
-        return cls.initialize(name, uri, tree_cache)
+        engine_uri = EngineURI(**uri)
+        return cls.initialize(name, engine_uri, tree_cache)
 
     @classmethod
     def from_engine(cls, name: str, engine: Engine, cache: TreeCache | None = None) -> Tree:
         tree_engine = TreeEngine.from_engine(name, engine, cache)
         return cls(name, tree_engine)
 
+    @classmethod
+    def from_tree_file(cls, path: Path | str, loader: Type[Loader] = YamlLoader) -> Tree:
+        path = Path(path)
+        configs = TreeConfig.parse_file(path, loader)
+
+        kwargs = configs.tree_inline
+
+        cache, c = None, kwargs.pop("cache", None)
+        if c is not None:
+            cache = TreeCache(**c)
+        return cls.initialize(**kwargs, cache=cache)
+
     def sync(self) -> None:
         self._engine.reflect()
+
+    def set_cache(self, cache: TreeCache | None = None) -> None:
+        self._engine.cache = cache
 
     def width(self, level: int) -> int:
         return self._engine.width(level)

@@ -117,7 +117,7 @@ class DataValidator:
         data: dict[str, Any], 
         fields: list[tuple], 
         keymap: dict[str, Any] | None = None,
-        on_collision: OnCollision = "raise"
+        on_collision: OnCollision | str = "raise"
     ) -> bool | Exception:
         uniq_contraints = defaultdict(list)
         
@@ -253,7 +253,7 @@ class FileCheck(DataValidator):
     def __init__(self, tree_name: str, engine: Engine) -> None:
         super().__init__(tree_name, engine)
 
-    def test(self, path: str | Path, keymap: dict[str, str] | None = None, on_collision: OnCollision = "raise") -> bool:
+    def test(self, path: str | Path, keymap: dict[str, str] | None = None, on_collision: OnCollision | str = "raise") -> bool:
         fields = self._fields()
         n = 1
         for payload in JLLoader().lazy_loader(path):
@@ -270,7 +270,7 @@ class PayloadCheck(DataValidator):
     def __init__(self, tree_name: str, engine: Engine) -> None:
         super().__init__(tree_name, engine)
 
-    def test(self, data: list[dict[str, Any]], keymap: dict[str, str] | None = None, on_collision: OnCollision = "raise") -> bool:
+    def test(self, data: list[dict[str, Any]], keymap: dict[str, str] | None = None, on_collision: OnCollision | str = "raise") -> bool:
         fields = self._fields()
         n = 1
         for payload in data:

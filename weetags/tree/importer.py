@@ -79,7 +79,7 @@ class Importer:
     def load(
         self, path: str | Path, 
         keymap: dict[str, str] | None = None, 
-        on_collision: OnCollision = "raise"
+        on_collision: OnCollision | str = "raise"
     ) -> None:
         self.loader = DataLoader(JLLoader, args=[path], keymap=keymap)
 
@@ -95,7 +95,7 @@ class Importer:
         self, 
         data: list[dict[str, Any]], 
         keymap: dict[str, str] | None = None, 
-        on_collision: OnCollision = "raise"
+        on_collision: OnCollision | str = "raise"
     ) -> None:
         self.loader = DataLoader(DictLoader, args=[data], keymap=keymap)
 
@@ -145,7 +145,7 @@ class Importer:
             if children is not None:
                 queue.extend(children)
 
-    def _node_indexer(self, on_collision: OnCollision = "raise") -> None:
+    def _node_indexer(self, on_collision: OnCollision | str = "raise") -> None:
         for batch in self._batch_loader(on_collision):
             if batch.btype == "insert":
                 topologies = [self._build_topology_payload(payload) for payload in batch]
@@ -171,7 +171,7 @@ class Importer:
                 """
                 raise NotImplementedError()
 
-    def _batch_loader(self, on_collision: OnCollision = "raise") -> Generator[TypedBatch]:
+    def _batch_loader(self, on_collision: OnCollision | str = "raise") -> Generator[TypedBatch]:
         batch_insert = TypedBatch([], "insert")
         batch_update = TypedBatch([], "update")
         batch_parent_update = TypedBatch([], "parent_update")
@@ -191,7 +191,7 @@ class Importer:
 
             elif name in self._existing_nodes and on_collision == "update":
                 batch_update.append(node)
-
+            
             else:
                 batch_insert.append(node)
                 if parent in self._existing_nodes:
