@@ -1,5 +1,7 @@
 from __future__ import annotations
+from ast import Raise, Tuple
 
+import sqlalchemy
 from sqlalchemy.sql.elements import UnaryExpression, ColumnElement
 from sqlalchemy import (
     MetaData,
@@ -14,97 +16,201 @@ from sqlalchemy import (
     func
 )
 
-from typing import Any
+from typing import Any, Callable
 
 from weetags.common.utils import OP
 
+"""
+
+CONDITION | AND | OR
+
+condition:
+    tuple: key, op, value
+    where
+        op is either a string or a tuple: func, *args
+
+return anon table, sqlach conditions
+
+
+json_each(c, path) 
+
+"""
 
 
 class SQLConditionParser:
+    table: Table
+
     def __init__(self, table: Table) -> None:
         self.table = table
+        self._anon_table = []
 
-        self.anon_table = []
-        self.condition = None
-        self.next_op = None
-    
-    def parse(self, conditions: list) -> tuple[list[Table], list[ColumnElement]]:
-        self._parse_block(conditions)
+    def parse(self, conditions: list[tuple[str, str | tuple, str] | str]) -> tuple[list[Table], ColumnElement | None]:
+        condition, operator = None, "__and__"
+        for block in conditions:
+            if isinstance(block, tuple): # or isinstance(block, list)
+                cond = self._parse_condition_block(block)
+                if condition is None:
+                    condition = cond
+                else:
+                    handler = getattr(condition, operator)
+                    condition = handler(cond)
+                operator = "__and__"
+            elif self._is_operator(block) and condition is None:
+                raise ValueError(f"operator {block} cannot be first in a conditions")
+            elif self._is_operator(block) and self._is_and(block):
+                operator = "__and__"
+            elif self._is_operator(block) and self._is_or(block):
+                operator = "__or__"
+        return (self._anon_table, condition)
 
-        if self.condition is None:
-            self.condition = []
-        return (self.anon_table, self.condition)
-    
-    def _parse_block(self, block: list | tuple | str) -> None:
-        for sub in block:
-            if self._is_expr(sub):
-                table, expr = self._parse_expr(*sub)
-                if table is not None:
-                    self.anon_table.append(table)
-                self._handle_expr(expr)
-            elif self._is_op(sub):
-                self.next_op = sub
-            else:
-                expr = self._parse_block(sub)
-                self._handle_expr(expr)
-
-    def _handle_expr(self, expr: ColumnElement) -> None:
-        if self.condition is None:
-            self.condition = expr
-        elif self.next_op in ["or", "OR", "|"]:
-            self.condition = self.condition.__or__(expr)
-            self.next_op = None
-        elif self.next_op in ["and", "AND", "&"] or self.next_op is None:
-            self.condition = self.condition.__and__(expr)
-            next_op = None
-        else:
-            raise ValueError(f"Unknown operator: {next_op}")
-
-    def _parse_expr(self, key: str, op: str, value: Any) -> tuple[Table | None, ColumnElement]:
-        column = self._get_column(key)
-        callable_name = self._get_op(op)
-        return self._apply_op(callable_name, column, value)
-
-    def _is_expr(self, block: list | tuple | str) -> bool:
-        return (
-            (
-                type(block) is list
-                or type(block) is tuple
-            )
-            and len(block) == 3
-            and isinstance(block[0], str)
-            and  isinstance(block[1], str)
-        )
-
-    def _is_op(self, block: list | tuple | str) -> bool:
+    def _is_operator(self, block: tuple[str, str | list, str] | str) -> bool:
         return isinstance(block, str) and block in ["and", "or", "AND", "OR", "&", "|"]
 
-    def _json_each(self, column: Column, value: Any) -> tuple[Table, ColumnElement]:
-        t = func.json_each(column).table_valued('value', joins_implicitly=True)
-        c = t.c.value == value
-        return (t, c)
-    
+    def _is_and(self, block: str) -> bool:
+        return block in ["and", "AND", "&"]
+
+    def _is_or(self, block: str) -> bool:
+        return block in ["or", "OR", "|"]
+
+    def _parse_condition_block(self, block: tuple[str, str | tuple[str, tuple[Any]], Any]) -> ColumnElement:
+        key, op_block, value = block
+        column = self._get_column(key)
+        if isinstance(op_block, str):
+            op = self._get_op(op_block)
+            callback = getattr(column, op, None)
+            if callback is None:
+                raise ValueError(f"Unknown operator: {op}") 
+            cond = callback(value)
+        else:
+            cond = self._apply_special_op(column, op_block, value)
+        return cond
+
     def _get_column(self, field: str) -> Column:
         column = self.table.c.get(field)
         if column is None:
             raise ValueError(f"Unknown column: {field}")
         return column
-    
+
     def _get_op(self, op: str) -> str:
         callable_name = OP.get(op, None)
         if callable_name is None:
             raise KeyError(f"Unknown operator: {op}")
         return callable_name
-        
-    def _apply_op(self, name: str, column: Column, value: Any) -> tuple[Table | None, ColumnElement]:
-        table, operator = None, None
-        match name:
+
+    def _apply_special_op(self, column: ColumnElement, op_block: tuple[str, tuple[Any]], value: Any) -> ColumnElement:
+        callback_name, args = op_block
+
+        f = getattr(func, callback_name, None)
+        if f is None:
+            raise ValueError(f"Unknown function: {callback_name}")
+
+        match callback_name:
             case "json_each":
-                table, operator = self._json_each(column, value)
+                op = self._apply_json_each(f, column, args, value)  
             case _:
-                o = getattr(column, name, None)
-                operator = o(value)
-        return (table, operator)
+                raise ValueError(f"Non handled function: {callback_name}")
+        return op
+    
+    def _apply_json_each(self, f: Callable, column: ColumnElement, args: tuple[Any], value: Any) -> ColumnElement:
+        if len(args) <= 1:
+            t = f(column, *args).table_valued('value', joins_implicitly=True)
+        else:
+            raise ValueError(f"too many arguments: {args}")
+        op = t.c.value == value
+        self._anon_table.append(t)
+        return op
+
+
+
+
+
+
+
+# class SQLConditionParser:
+#     def __init__(self, table: Table) -> None:
+#         self.table = table
+
+#         self.anon_table = []
+#         self.condition = None
+#         self.next_op = None
+    
+#     def parse(self, conditions: list) -> tuple[list[Table], list[ColumnElement]]:
+#         self._parse_block(conditions)
+
+#         if self.condition is None:
+#             self.condition = []
+#         return (self.anon_table, self.condition)
+    
+#     def _parse_block(self, block: list | tuple | str) -> None:
+#         for sub in block:
+#             if self._is_expr(sub):
+#                 table, expr = self._parse_expr(*sub)
+#                 if table is not None:
+#                     self.anon_table.append(table)
+#                 self._handle_expr(expr)
+#             elif self._is_op(sub):
+#                 self.next_op = sub
+#             else:
+#                 expr = self._parse_block(sub)
+#                 self._handle_expr(expr)
+
+#     def _handle_expr(self, expr: ColumnElement) -> None:
+#         if self.condition is None:
+#             self.condition = expr
+#         elif self.next_op in ["or", "OR", "|"]:
+#             self.condition = self.condition.__or__(expr)
+#             self.next_op = None
+#         elif self.next_op in ["and", "AND", "&"] or self.next_op is None:
+#             self.condition = self.condition.__and__(expr)
+#             next_op = None
+#         else:
+#             raise ValueError(f"Unknown operator: {next_op}")
+
+#     def _parse_expr(self, key: str, op: str, value: Any) -> tuple[Table | None, ColumnElement]:
+#         column = self._get_column(key)
+#         callable_name = self._get_op(op)
+#         return self._apply_op(callable_name, column, value)
+
+#     def _is_expr(self, block: list | tuple | str) -> bool:
+#         return (
+#             (
+#                 type(block) is list
+#                 or type(block) is tuple
+#             )
+#             and len(block) == 3
+#             and isinstance(block[0], str)
+#             and  isinstance(block[1], str)
+#         )
+
+#     def _is_op(self, block: list | tuple | str) -> bool:
+#         return isinstance(block, str) and block in ["and", "or", "AND", "OR", "&", "|"]
+
+#     def _json_each(self, column: Column, value: Any) -> tuple[Table, ColumnElement]:
+#         t = func.json_each(column).table_valued('value', joins_implicitly=True)
+#         c = t.c.value == value
+#         return (t, c)
+    
+#     def _get_column(self, field: str) -> Column:
+#         column = self.table.c.get(field)
+#         if column is None:
+#             raise ValueError(f"Unknown column: {field}")
+#         return column
+    
+#     def _get_op(self, op: str) -> str:
+#         callable_name = OP.get(op, None)
+#         if callable_name is None:
+#             raise KeyError(f"Unknown operator: {op}")
+#         return callable_name
+        
+#     def _apply_op(self, name: str, column: Column, value: Any) -> tuple[Table | None, ColumnElement]:
+#         table, operator = None, None
+#         match name:
+#             case "json_each":
+#                 table, operator = self._json_each(column, value)
+#             case _:
+#                 o = getattr(column, name, None)
+#                 operator = o(value)
+#         return (table, operator)
                 
 
 
@@ -139,8 +245,7 @@ class QueryBuilder:
         
         stmt = select(*self._fields)
         for table in self._from:
-            stmt.select_from(table)
-        
+            stmt = stmt.select_from(table)
         stmt = stmt.where(*self._where).order_by(*self._order_by)
         if self._offset is not None:
             stmt = stmt.offset(self._offset)
@@ -218,19 +323,19 @@ class QueryBuilder:
         exprs = self._str_to_order(*fields)
         return self.order_by(*exprs)
 
-    def where(self, *conditions: ColumnElement) -> QueryBuilder:
+    def where(self, conditions: list[ColumnElement]) -> QueryBuilder:
         """
         func.json_contains(f, k, "$")
         """
         self._where.extend(conditions)
         return self
         
-    def where_from_str(self, *conditions: list) -> QueryBuilder:
+    def where_from_str(self, conditions: list) -> QueryBuilder:
         table = self._get_table()
-        tables, where = SQLConditionParser(table).parse(*conditions)
+        tables, where = SQLConditionParser(table).parse(conditions)
         if tables is not None:
-            self._from
-        return self.where(*where)
+            self._from.extend(tables)
+        return self.where([where])
 
     
     def _get_table(self) -> Table:
