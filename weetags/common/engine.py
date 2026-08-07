@@ -365,7 +365,6 @@ class Engine:
         if unique_constraints is None:
             unique_constraints = []
 
-        print(columns)
         table = Table(name, self.metadata, schema="main", *columns, *indexes, *unique_constraints)
         table.create(self.engine)
         return table

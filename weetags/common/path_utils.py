@@ -37,7 +37,6 @@ class NodePath:
         return path in self.path
 
     def distance(self, name: str, other: str) -> int:
-        print(self.nodes)
         name_pos = self.nodes.index(name)
         other_pos = self.nodes.index(other)
         return abs(name_pos - other_pos)
@@ -75,7 +74,6 @@ class NodePath:
 
     def suffix_from_node(self, name: str, size: int, include_seperator: bool = True) -> str:
         striped_path = NodePath(self.lstrip_from_node(name, include_seperator))
-        print(striped_path)
         return striped_path.suffix(size)
 
     def get_node_before(self, name: str, dist: int) -> str | None:
