@@ -88,7 +88,11 @@ class JLLoader(Loader):
                 elif len(payloads) == 1:
                     current += payloads.pop(0)
                 else:
-                    yield json.loads(current + payloads.pop(0)) 
+                    if current.count("{") == current.count("}") and current.count("}") > 0:
+                        yield json.loads(current)
+                        current = ""
+                    else:
+                        yield json.loads(current + payloads.pop(0))
                     current = payloads.pop()
                     for payload in payloads:
                         yield json.loads(payload)
