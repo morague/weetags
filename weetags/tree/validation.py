@@ -142,7 +142,6 @@ class DataValidator:
             if valid_type is False:
                 return TypeError(f"Key {name} as an invalid type. expected type: {dtype}")
 
-
             # no `.` in name value
             if name == "name" and isinstance(value, str) and value.__contains__("."):
                 raise ValueError("Name values cannot contain `.` .")
@@ -177,6 +176,11 @@ class DataValidator:
             for constraint in self._uniq_constraint:
                 if name in constraint:
                     uniq_contraints[constraint].append(value)
+
+        for parent in self._await_parent_check:
+            if parent in self._namespace:
+                index = self._await_parent_check.index(parent)
+                self._await_parent_check.pop(index)
 
         # once all uniq constraint values are gathered, check against existing namespaces.
         for constraint in self._uniq_constraint:
@@ -244,7 +248,6 @@ class DataValidator:
                     values.append(v)
                 digest = sha256(json.dumps(values).encode()).hexdigest()
                 self._uniq_contraint_namespaces[constraint].append(digest)
-
 
 
 
