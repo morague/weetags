@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from logging import config
 from pathlib import Path
 from attrs import define, field, validators, asdict
 from sqlalchemy.types import TypeEngine
@@ -17,7 +16,7 @@ from sqlalchemy import (
 
 from typing import Any, Type, get_args
 
-from weetags.common.loaders import ConfigLoader, Loader, YamlLoader, select_loader
+from weetags.common.loaders import ConfigLoader, Loader, YamlLoader
 from weetags.common.utils import path_converter
 from weetags.common.types import TreeTypes, OnChange, OnCollision, CacheType
 from weetags.common.uri import EngineURI

@@ -13,6 +13,20 @@ from sqlalchemy import (
 
 from weetags.common.configs import FieldDefinition
 
+"""
+
+TOPOLOGY                    METADATA
+
+                TREE
+
+
+"""
+
+def field_is_reserved(field: str) -> bool:
+    if field in TreeTopologyDefinition().namespace:
+        raise KeyError(f"Field name: {field} is a reserved namespace.")
+    return True
+
 class TreeTopologyDefinition(object):
     
     columns = [

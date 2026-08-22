@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Type, Any
 
+from sqlalchemy import Table
+
 
 OP = {
     "=": "__eq__",
@@ -68,3 +70,40 @@ def path_converter(value: Any) -> Path | None:
         return value
     else:
         raise TypeError("path must be a str or a Path")
+
+
+
+
+
+def field_exist(field: str, metadata: Table) -> bool:
+    if field in metadata.columns.keys():
+        raise KeyError(f"Field name: {field} does already exist")
+    return True
+
+def field_not_exist(field: str, metadata: Table) -> bool:
+    if field not in metadata.columns.keys():
+        raise KeyError(f"Field name: {field} doesn't exist")
+    return True
+
+def field_non_nullable(nullable: bool, default: Any) -> bool:
+    if nullable is False and default is None:
+        raise ValueError("New fields require either to be nullable or to have a default value")
+    return True
+
+def psql_required(dialect: str) -> bool:
+    if dialect != "postgres":
+        raise ValueError("Unique constraint manipulation after tree creation is only available for psql dialect.")
+    return True
+
+def require_sqlite_version() -> bool:
+    """
+        if self._engine.uri.dialect == "sqlite":
+            version = self._engine.engine.dialect.server_version_info
+            if version is not None and version[0] >= 3 and version[1] >= 53:
+                pass
+            else:
+                raise ValueError("Nullable constraint manipulation require sqlite engine version >= 3.53.0")
+        elif self._engine.uri.dialect != "postgres":
+            raise ValueError("Unique constraint manipulation after tree creation is only available for psql dialect.")
+    """
+    return True
