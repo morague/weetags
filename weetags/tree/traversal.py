@@ -5,18 +5,17 @@ from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator
 
-from weetags.common import EngineURI, Engine
+from weetags.common import EngineURI, BoundEngine
 
 
-class TreeTraversal(ABC, Engine):
+class TreeTraversal(ABC, BoundEngine):
     name: str
     topology: list[str]
     visited: list[str]
 
     def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI):
-        super().__init__(base_engine, uri)
+        super().__init__(name, base_engine, uri)
         self.name = name
-        self.get_tree(name)
 
     @abstractmethod
     def walk(self, sub_tree: str) -> Generator[dict[str, Any]]:
@@ -32,16 +31,16 @@ class PreOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree: str):
-        node = self._node_from_name(sub_tree)
+        node = self._node(sub_tree)
         if node is None:
             raise ValueError(f"Unknown node name: {sub_tree}")
     
-        self.topology = self.sub_tree_topology_from_name(sub_tree)
+        self.topology = self.subtree_topology(sub_tree)
         self.visited = []
         yield from self._walk_sub_tree(sub_tree)
 
     def _walk_sub_tree(self, sub_tree: str) -> Generator[dict[str, Any]]:
-        node = self._node_from_name(sub_tree)
+        node = self._node(sub_tree)
         if node is None:
             raise ValueError(f"Unknown node name: {sub_tree}")
 
@@ -49,7 +48,7 @@ class PreOrderTreeTraversal(TreeTraversal):
         self.visited.append(node_path)
         yield node
 
-        topology = self.sub_tree_topology_from_name(sub_tree)
+        topology = self.subtree_topology(sub_tree)
         for path in topology:
             if path not in self.visited:
                 child_name = path.split(".")[len(node_path.split("."))]
@@ -64,12 +63,12 @@ class InOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree):
-        node = self._node_from_name(sub_tree)
+        node = self._node(sub_tree)
         if node is None:
             raise ValueError(f"Unknown node name: {sub_tree}")
 
         self.sub_tree_root = sub_tree
-        self.topology = self.sub_tree_topology_from_name(sub_tree)
+        self.topology = self.subtree_topology(sub_tree)
         self.visited = []
         for path in self.topology:
             if path not in self.visited:
@@ -77,7 +76,7 @@ class InOrderTreeTraversal(TreeTraversal):
                 yield from self._tree_ascend(node_name)
 
     def _tree_ascend(self, name: str) -> Generator[dict[str, Any]]:
-        node = self._node_from_name(name)
+        node = self._node(name)
         if node is None:
             raise ValueError(f"Unknown node name: {name}")
         node_name = node["name"]
@@ -134,12 +133,12 @@ class PostOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree):
-        node = self._node_from_name(sub_tree)
+        node = self._node(sub_tree)
         if node is None:
             raise ValueError(f"Unknown node name: {sub_tree}")
 
         self.sub_tree_root = sub_tree
-        self.topology = self.sub_tree_topology_from_name(sub_tree)
+        self.topology = self.subtree_topology(sub_tree)
         self.visited = []
 
         for path in self.topology:
@@ -149,7 +148,7 @@ class PostOrderTreeTraversal(TreeTraversal):
     def _ascend_tree(self, path: str) -> Generator[dict[str,Any]]:
         if path not in self.visited:
             node_name = path.split(".")[-1]
-            node = self._node_from_name(node_name)
+            node = self._node(node_name)
             assert node is not None
 
             if path not in self.visited:
@@ -158,7 +157,7 @@ class PostOrderTreeTraversal(TreeTraversal):
 
             parent_name = node["parent"]
             if parent_name is not None:
-                parent_tree_topology = self.sub_tree_topology_from_name(parent_name)
+                parent_tree_topology = self.subtree_topology(parent_name)
                 for p in parent_tree_topology:
                     if p not in self.visited:
                         yield from self._ascend_tree(p)
