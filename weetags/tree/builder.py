@@ -157,7 +157,7 @@ class TreeBuilder:
         unique_constraints: list[list[str]] | None = None,
         on_change: OnChange | str= "raise"
     ) -> Tree:
-        self.engine._create_schema()
+        self.engine.create_schema()
         tree_topology = self._intialize_tree_topology(name)
         tree_metadata = self._intialize_tree_metadata(name, fields, tree_topology, indexes, unique_constraints)
         self._initialize_tree_view(name, tree_topology, tree_metadata)
@@ -175,7 +175,7 @@ class TreeBuilder:
         return Tree.from_engine(name, self.engine)
 
     def _intialize_tree_topology(self, name: str) -> Table:        
-        table = self.engine._create_table(f"_{name}_topology", TreeTopologyDefinition.columns, exist_ok=True)
+        table = self.engine.create_table(f"_{name}_topology", TreeTopologyDefinition.columns, exist_ok=True)
         return table
 
     def _intialize_tree_metadata(
@@ -195,7 +195,7 @@ class TreeBuilder:
 
         builded_indexes = self._indexes(name, fields, indexes)
         builded_uconstraint = self._unique_constraints(name, fields, unique_constraints)
-        table = self.engine._create_table(
+        table = self.engine.create_table(
             f"_{name}_metadata", 
             columns, 
             indexes=builded_indexes, 
@@ -226,7 +226,7 @@ class TreeBuilder:
         skip_import: bool = False
     ) -> bool:
         if self.engine.exist(name) and recreate:
-            self.engine._drop_tree(name)
+            self.engine._drop(name)
         elif self.engine.exist(name):
             # TEST STRUCUTURE AGAINST THE NEW ONE. APPLY DEFINED STRATEGY WHEN CHANGES
             # diff = self compare structure

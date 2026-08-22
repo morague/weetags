@@ -6,7 +6,7 @@ from collections import deque, defaultdict
 
 from typing import Any, Generator, Type
 
-from weetags.common import Engine
+from weetags.common import Engine, BoundEngine
 from weetags.common.types import OnCollision, BatchT
 from weetags.common.base import TreeTopologyDefinition, TreeMetadataDefinition
 from weetags.common.loaders import JLLoader, Loader, DictLoader
@@ -50,6 +50,8 @@ class Importer:
     """
     TODO: verify that the data is not already imported. abort importation if necessary
     """
+    engine: BoundEngine
+
     batch_size: int = 100
 
     # global states
@@ -68,10 +70,10 @@ class Importer:
     
     def __init__(self, tree_name: str, engine: Engine, batch_size: int = 100) -> None:
         self.tree_name = tree_name
-        self.engine = engine
 
+        self.engine = engine.bind(tree_name)
         self.engine.reflect()
-        self.tree_topology, self.tree_metadata, _ = self.engine.get_tree(self.tree_name)
+        # self.tree_topology, self.tree_metadata, _ = self.engine.get_tree(self.tree_name)
 
         # configuration
         self.batch_size = batch_size
@@ -149,10 +151,10 @@ class Importer:
         for batch in self._batch_loader(on_collision):
             if batch.btype == "insert":
                 topologies = [self._build_topology_payload(payload) for payload in batch]
-                nids = self.engine._write_multi_topology(topologies)
+                nids = self.engine.write_multi_topology(topologies)
 
                 metadatas = [self._build_metadata_payload(payload, nid) for payload, nid in zip(batch, nids)]
-                self.engine._write_multi_metadata(metadatas)
+                self.engine.write_multi_metadata(metadatas)
             elif batch.btype == "parent_update":
                 """update topology of the parent node by inserting new child name."""
                 for parent, child in batch:
@@ -212,12 +214,12 @@ class Importer:
             "path": self._name2path.get(node_name),
             "level": len(self._name2path[node_name].split(".")) - 1
         } 
-        [payload.update({f.name: data.get(f.name, None)}) for f in self.tree_topology.columns.values() if f.name not in TreeTopologyDefinition().generated_keys]
+        [payload.update({f.name: data.get(f.name, None)}) for f in self.engine._topology.columns.values() if f.name not in TreeTopologyDefinition().generated_keys]
         return payload
 
     def _build_metadata_payload(self, data: dict[str, Any], nid: int) -> dict[str, Any]:
         payload = {"id": nid}
-        [payload.update({f.name: data.get(f.name, None)}) for f in self.tree_metadata.columns.values() if f.name not in TreeMetadataDefinition.fk]
+        [payload.update({f.name: data.get(f.name, None)}) for f in self.engine._metadata.columns.values() if f.name not in TreeMetadataDefinition.fk]
         return payload
 
     def _map_existing_relations(self) -> None:

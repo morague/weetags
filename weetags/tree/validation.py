@@ -10,7 +10,7 @@ from sqlalchemy import Index, Constraint, UniqueConstraint
 
 from typing import Any
 
-from weetags.common import Engine
+from weetags.common import Engine, BoundEngine
 from weetags.common.types import OnCollision
 from weetags.common.base import TreeTopologyDefinition, TreeMetadataDefinition
 from weetags.common.loaders import JLLoader
@@ -20,8 +20,7 @@ from weetags.common.utils import translate_sqlalchemy_sqltype, translate_keys, J
 class Validator(ABC):
     def __init__(self, tree_name: str, engine: Engine):
         self.tree_name = tree_name
-        self._engine = engine
-        self._engine.get_tree(tree_name)
+        self._engine = engine.bind(tree_name)
 
     @abstractmethod
     def test(self) -> bool:
@@ -93,10 +92,10 @@ class DataValidator:
     """
     def __init__(self, tree_name: str, engine: Engine) -> None:
         self.tree_name = tree_name
-        self.engine = engine
+        self._engine = engine.bind(tree_name)
 
-        self.tree_topology, self.tree_metadata,_ = self.engine.get_tree(tree_name)
-        if self.tree_topology is None or self.tree_metadata is None:
+        # self.tree_topology, self.tree_metadata,_ = self.engine.get_tree(tree_name)
+        if self._engine._topology is None or self._engine._metadata is None:
             raise KeyError("Cannot validate Data file against tree structure that is not constructed yet.")
 
         self._existing_namespace = []
@@ -208,13 +207,13 @@ class DataValidator:
     def _fields(self) -> list[tuple[str, Any, bool | None]]:
         topology_fields =  [
             (c.name, translate_sqlalchemy_sqltype(c.type), c.nullable) 
-            for c in self.tree_topology.columns 
+            for c in self._engine._topology.columns 
             if c.name in TreeTopologyDefinition().base_keys
         ]
 
         meta_fields =  [
             (c.name, translate_sqlalchemy_sqltype(c.type), c.nullable) 
-            for c in self.tree_metadata.columns 
+            for c in self._engine._metadata.columns 
             if c.name not in TreeMetadataDefinition.fk
         ]
         return topology_fields + meta_fields
@@ -222,7 +221,7 @@ class DataValidator:
     def _constraints(self) -> None:
         """only check uniq and indexes"""
 
-        for constraint in self.tree_metadata.indexes.union(self.tree_metadata.constraints):
+        for constraint in self._engine._metadata.indexes.union(self._engine._metadata.constraints):
             if isinstance(constraint, Index) or isinstance(constraint, UniqueConstraint):
                 c = tuple([c.name for c in constraint._columns])
             else:
@@ -233,7 +232,7 @@ class DataValidator:
 
     def _existing(self) -> None:
         fields = self._fields()
-        for node in self.engine.non_ordered_walk():
+        for node in self._engine.non_ordered_walk():
             # set existing namespace for name collision check
             self._existing_namespace.append(node["name"])
 
