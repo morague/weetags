@@ -31,19 +31,13 @@ class PreOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree: str):
-        node = self._node(sub_tree)
-        if node is None:
-            raise ValueError(f"Unknown node name: {sub_tree}")
-    
+        _ = self._node_or_raise(sub_tree)
         self.topology = self.subtree_topology(sub_tree)
         self.visited = []
         yield from self._walk_sub_tree(sub_tree)
 
     def _walk_sub_tree(self, sub_tree: str) -> Generator[dict[str, Any]]:
-        node = self._node(sub_tree)
-        if node is None:
-            raise ValueError(f"Unknown node name: {sub_tree}")
-
+        node = self._node_or_raise(sub_tree)
         node_path: str = node["path"]
         self.visited.append(node_path)
         yield node
@@ -63,9 +57,7 @@ class InOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree):
-        node = self._node(sub_tree)
-        if node is None:
-            raise ValueError(f"Unknown node name: {sub_tree}")
+        _ = self._node_or_raise(sub_tree)
 
         self.sub_tree_root = sub_tree
         self.topology = self.subtree_topology(sub_tree)
@@ -76,9 +68,7 @@ class InOrderTreeTraversal(TreeTraversal):
                 yield from self._tree_ascend(node_name)
 
     def _tree_ascend(self, name: str) -> Generator[dict[str, Any]]:
-        node = self._node(name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
+        node = self._node_or_raise(name)
         node_name = node["name"]
         node_path: str = node["path"]
         node_parent = node.get("parent")
@@ -133,10 +123,7 @@ class PostOrderTreeTraversal(TreeTraversal):
         super().__init__(name, base_engine, uri)
 
     def walk(self, sub_tree):
-        node = self._node(sub_tree)
-        if node is None:
-            raise ValueError(f"Unknown node name: {sub_tree}")
-
+        _ = self._node_or_raise(sub_tree)
         self.sub_tree_root = sub_tree
         self.topology = self.subtree_topology(sub_tree)
         self.visited = []
