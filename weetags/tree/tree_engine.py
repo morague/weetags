@@ -6,13 +6,14 @@ from pathlib import Path
 from functools import wraps
 from collections import deque
 
-from sqlalchemy import Table, create_engine, select, func
+from pytest import Session
+from sqlalchemy import Table, create_engine, select, func, ColumnElement
 from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator
 
 from weetags.common.types import Relation, TraversalOrder, OnCollision
-from weetags.common import EngineURI, Engine, QueryBuilder
+from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
@@ -21,6 +22,8 @@ from weetags.tree.traversal import (
     PostOrderTreeTraversal
 )
 from weetags.tree.importer import Importer
+
+
 
 
 def tree_topology_cache(relation: Relation):
@@ -46,9 +49,9 @@ def tree_topology_cache(relation: Relation):
                     return f(instance, *args, **kwargs)    
 
                 if isinstance(nids, list):
-                    return instance._nodes_from_id(*nids)
+                    return instance._nodes_from_nid(*nids)
                 elif isinstance(nids, int):
-                    return instance._node_from_id(nids)
+                    return instance._node_from_nid(nids)
                 else:
                     return f(instance, *args, **kwargs)    
             else:
@@ -56,7 +59,7 @@ def tree_topology_cache(relation: Relation):
         return wrapper
     return inner
 
-class TreeEngine(Engine):
+class TreeEngine(BoundEngine):
     uri: EngineURI
     cache: TreeCache | None
 
@@ -66,11 +69,9 @@ class TreeEngine(Engine):
     _metadata: Table
 
     def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, cache: TreeCache | None = None):
-        super().__init__(base_engine, uri)
-        self.name = name
-        self.cache = cache
+        super().__init__(name, base_engine, uri)
 
-        self.get_tree(name)
+        self.cache = cache
         if self.cache is not None:
             self.cache.bind(name, self)
 
@@ -146,43 +147,31 @@ class TreeEngine(Engine):
         return data[0]._asdict()
 
     def _n_roots(self) -> int:
-        stmt = select(func.count()).where(self.tree.c.parent == None)
-        with self.sessionmaker() as session:
-            n = session.execute(stmt).scalar_one()
-        return n
-
+        return len(self.roots(self.name))
 
     # TREE PARTS ENUMERATION
     def node(self, name: str) -> dict[str, Any] | None:
-        return self._node_from_name(name)
+        return self._node(name)
 
     def nodes_where(self, conditions: list) -> list[dict[str, Any]]:
-        stmt = QueryBuilder(self.metadata).tree(self.tree).where_from_str(conditions).read
+        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
         with self.sessionmaker() as session:
-            nodes = session.execute(stmt).fetchall()
+            nodes = session.execute(stmt()).fetchall()
         return [n._asdict() for n in nodes]
 
     @tree_topology_cache("parent")
     def parent_node(self, name: str) -> dict[str, Any] | None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
-
-        
+        node = self._node_or_raise(name)        
         parent_name = node.get("parent", None)
         if parent_name is None:
             return None
-        
-        return self._node_from_name(parent_name)
+        return self._node(parent_name)
 
     @tree_topology_cache("children")
     def children_nodes(self, name: str) -> list[dict[str, Any]]:
-        node = self._node_from_name(name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
-
+        node = self._node_or_raise(name)
         children_names = node.get("children",  [])
-        return self._nodes_from_name(*children_names)
+        return self._nodes(*children_names)
 
     def sibling_nodes(self, name: str, include_self: bool = False) -> list[dict[str, Any]]:
         parent = self.parent_node(name)
@@ -190,15 +179,11 @@ class TreeEngine(Engine):
             return []
 
         parent_name = parent["name"]
-        parent_node = self._node_from_name(parent_name)
-        if parent_node is None:
-            raise ValueError(f"Unknown node name: {parent_name}")
-
-
+        parent_node = self._node_or_raise(parent_name)
         siblings = parent_node.get("children", [])
         if include_self is False:
             siblings = [n for n in siblings if n != name]
-        return self._nodes_from_name(*siblings)
+        return self._nodes(*siblings)
 
     @tree_topology_cache("descendant")
     def descendant_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
@@ -209,11 +194,7 @@ class TreeEngine(Engine):
         queue = deque([name])
         while len(queue) > 0:
             node_name = queue.popleft()
-
-            node = self._node_from_name(node_name)
-            if node is None:
-                raise ValueError(f"Unknown node name: {node_name}")
-
+            node = self._node_or_raise(node_name)
             node_children = node.get("children", [])
             queue.extend(node_children)
             if node.get("name") != name:
@@ -232,47 +213,35 @@ class TreeEngine(Engine):
 
     @tree_topology_cache("branch")
     def branch_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
-        node = self._node_from_name(name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
+        node = self._node_or_raise(name)
 
         ancestors = self.ancestor_nodes(name)
         descendants = self.descendant_nodes(name)
         return ancestors[::-1] + [node] + descendants
 
     def lowest_common_ancestor(self, name: str, other_name: str) -> dict[str, Any]:
-        node = self._node_from_name(name)
-        other = self._node_from_name(other_name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
-        if other is None:
-            raise ValueError(f"Unknown node name: {other_name}")
+        node = self._node_or_raise(name)
+        other = self._node_or_raise(other_name)
 
         node_path = NodePath(node["path"])
         other_path = NodePath(other["path"])
         for ancestor_name in node_path.nodes[::-1]:
             if ancestor_name in other_path.nodes:
-                ancestor = self._node_from_name(ancestor_name)
-                if ancestor is None:
-                    raise ValueError(f"Unknown node name: {ancestor_name}")
+                ancestor = self._node_or_raise(ancestor_name)
                 return ancestor
         raise KeyError("Unable to find a common ancestor")
 
 
     def distance(self, name: str, other_name: str) -> int:
-        node = self._node_from_name(name)
-        other = self._node_from_name(other_name)
-        if node is None:
-            raise ValueError(f"Unknown node name: {name}")
-        if other is None:
-            raise ValueError(f"Unknown node name: {other_name}")
+        node = self._node_or_raise(name)
+        other = self._node_or_raise(other_name)
 
         node_path = NodePath(node["path"])
         other_path = NodePath(other["path"])
         ancestor, ancestor_name = None, None
         for ancestor_name in node_path.nodes[::-1]:
             if ancestor_name in other_path.nodes:
-                ancestor = self._node_from_name(ancestor_name)
+                ancestor = self._node(ancestor_name)
                 break
         if ancestor is None:
             raise KeyError("Unable to find a common ancestor")
@@ -298,7 +267,7 @@ class TreeEngine(Engine):
 
     def level_order_traversal(self, *level_node_names: str) -> Generator[dict[str, Any]]:
         next_level = []
-        for node in self._nodes_from_name(*level_node_names):
+        for node in self._nodes(*level_node_names):
             next_level.extend(node.get("children", []))
             yield node
         if next_level:
@@ -310,39 +279,30 @@ class TreeEngine(Engine):
             raise KeyError("Tree already has a root node.")
 
         if parent is not None:
-            parent_node = self._node_from_name(parent)
-            if parent_node is None:
-                raise KeyError(f"Unknown node name: {parent}")
-
+            parent_node = self._node_or_raise(parent)
             parent_name = parent_node["name"]
             parent_path = [parent_node["path"]]
         else:
             parent_name = None
             parent_path = []
 
-
-        node = self._node_from_name(name)
-        if node is not None:
-            raise KeyError(f"Node already exist: {name}")
-
+        _ = self._node_or_raise(name)
         path = ".".join(parent_path + [name])
         level = len(path.split(".")) - 1
-        nid = self._write_topology({"name": name, "path": path, "parent": parent_name, "children": [], "level": level})
+        nid = self.write_topology({"name": name, "path": path, "parent": parent_name, "children": [], "level": level})
 
         if metadata is None:
             metadata = {}
         metadata.update({"id": nid})
-        self._write_metadata(metadata)
+        self.write_metadata(metadata)
 
         if parent is not None:
             self._add_child(parent, name)
 
 
     def remove_node(self, name: str, force: bool = False) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-        elif len(node.get("children", [])) > 0 and force is False:
+        node = self._node_or_raise(name)
+        if len(node.get("children", [])) > 0 and force is False:
             raise ValueError(f"Node {name} has children. Use `prune` method instead or add `force` argument to this method.")
         elif len(node.get("children", [])) > 0 and force:
             return self.prune_subtree(name)
@@ -350,69 +310,56 @@ class TreeEngine(Engine):
         parent = node.get("parent", None)
         if parent is not None:
             self._remove_child(parent, name)
-        self._delete_topology(node["id"])
+        self.delete_topology(node["id"])
 
     def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        stmt = QueryBuilder(self.metadata).tree(self.tree).where_from_str(conditions).read
+        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
         with self.sessionmaker() as session:
-            nodes = session.execute(stmt).fetchall()
+            nodes = session.execute(stmt()).fetchall()
         names = [n._asdict()["name"] for n in nodes]
         [self.remove_node(name, force) for name in names]
 
     def prune_subtree(self, name: str) -> None:
         """prune a node all of it's subtree."""
-        self._prune(name)
+        self.prune(name)
 
     def update_node(self, name: str, values: dict[str, Any]) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-        self._update_metadata([node["id"]], values)
+        node = self._node_or_raise(name)
+        self.update_metadata([node["id"]], values)
 
     def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        stmt = QueryBuilder(self.metadata).tree(self.tree).where_from_str(conditions).read
+        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
         with self.sessionmaker() as session:
-            nodes = session.execute(stmt).fetchall()
+            nodes = session.execute(stmt()).fetchall()
         nids = [n._asdict()["id"] for n in nodes]
-        self._update_metadata(nids, values)
+        self.update_metadata(nids, values)
 
     def update_node_name(self, name: str, new_name: str) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
-        future_name = self._node_from_name(new_name)
-        if future_name is not None:
-            raise KeyError(f"Node already exist: {new_name}")
+        node = self._node_or_raise(name)
+        _ = self._node_or_raise(new_name)
 
         parent_name = node["parent"]
         children_names = node.get("children", []) 
         if parent_name is not None:
             self._replace_child(parent_name, name, new_name)
-        self._update_topology([node["id"]], {"name": new_name})
+        self.update_topology([node["id"]], {"name": new_name})
 
         for child in children_names:
             self._replace_parent(child, new_name)
 
     def move_subtree(self, name: str, parent_new_name: str | None) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
         if parent_new_name is None and self._n_roots() > 0:
             raise ValueError("Tree already has a root node.")
 
         # HANDLE OLD AND NEW PARENT CHILDREN
+        node = self._node_or_raise(name)
         node_name = node["name"]
         parent_name = node["parent"]
         if parent_name is not None:
             self._remove_child(parent_name, name)
 
         if parent_new_name is not None:
-            new_parent = self._node_from_name(parent_new_name)
-            if new_parent is  None:
-                raise KeyError(f"Unknown node name: {parent_new_name}")
-
+            new_parent = self._node_or_raise(parent_new_name)
             self._add_child(parent_new_name, name)
         else:
             new_parent = None
@@ -427,19 +374,14 @@ class TreeEngine(Engine):
             else:
                 path = f"{parent_path}.{node_name}"
         level = len(path.split(".")) - 1
-        self._update_topology([node["id"]], {"parent": parent_new_name, "path": path, "level": level})
+        self.update_topology([node["id"]], {"parent": parent_new_name, "path": path, "level": level})
 
         children = node.get("children", [])
         for child in children:
             self._update_subtree_path(child, path)
 
-    
-        
     def _update_subtree_path(self, name: str, parent_path: str | None = None) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
+        node = self._node_or_raise(name)
         node_name = node["name"]
         if parent_path is None:
             path = f"{node_name}"
@@ -447,35 +389,25 @@ class TreeEngine(Engine):
             path = f"{parent_path}.{node_name}"
         level = len(path.split(".")) - 1
 
-        self._update_topology([node["id"]], {"path": path, "level": level})
+        self.update_topology([node["id"]], {"path": path, "level": level})
         children = node.get("children", [])
         for child in children:
             self._update_subtree_path(child, path)
 
-
     def append_list(self, name: str, key: str, value: Any) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
+        node = self._node_or_raise(name)
         v: list[Any] = node.get(key, [])
         v.append(value)
-        self._update_metadata([node["id"]], {key:v})
+        self.update_metadata([node["id"]], {key:v})
 
     def extend_list(self, name: str, key: str, value: list[Any]) -> None:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
+        node = self._node_or_raise(name)
         v: list[Any] = node.get(key, [])
         v.extend(value)
-        self._update_metadata([node["id"]], {key:v})
+        self.update_metadata([node["id"]], {key:v})
 
     def pop_list(self, name: str, key: str, value: Any = -1) -> Any:
-        node = self._node_from_name(name)
-        if node is None:
-            raise KeyError(f"Unknown node name: {name}")
-
+        node = self._node_or_raise(name)
         v: list[Any] = node.get(key, [])
         try: 
             index = v.index(value)
@@ -483,7 +415,7 @@ class TreeEngine(Engine):
             return None
 
         poped = v.pop(index)
-        self._update_metadata([node["id"]], {key:v})
+        self.update_metadata([node["id"]], {key:v})
         return poped
 
     def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
@@ -492,4 +424,11 @@ class TreeEngine(Engine):
                 payload = json.dumps(node)
                 f.write(payload + "\n")
 
+    def nodes(self, *conditions: ColumnElement):
+        from weetags.tree.test import TreeResult, TreeSession
+
+        stmt = select(self.tree).where(*conditions)
+        with TreeSession(self.engine) as session:
+            res = session.execute(stmt)
+        return res
 
