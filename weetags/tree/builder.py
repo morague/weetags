@@ -58,21 +58,20 @@ class TreeBuilder:
         engine = Engine.from_uri(uri)
         return cls(engine)
 
-
-
     @classmethod
     def build_from_tree_file(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
         configs = conf.TreeConfig.parse_file(path, loader)
 
         kwargs = configs.tree_inline
+        builder = cls.from_uri(configs.uri)
+        tree = builder._build(configs)
+
         cache, c = None, kwargs.pop("cache", None)
         if c is not None:
             cache = TreeCache(**c)
-
-        builder = cls.from_uri(configs.uri)
-        return builder._build(configs, cache)
-
-
+            tree.set_cache(cache)
+        return tree
+        
     def build_from_file(
         self,
         name: str, 
@@ -88,14 +87,12 @@ class TreeBuilder:
         on_collision: OnCollision = "raise",
         skip_init: bool = False,
         skip_import: bool = False,
-
-        cache: TreeCache | None = None
     ) -> Tree:
         s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
         b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
         d = conf.DataDefinition(path=data_path, keymap=keymap)
         configs = conf.TreeConfig(name, self.engine.uri, "tree", cache=None, structure=s, data=d, builder=b)
-        return self._build(configs, cache)
+        return self._build(configs)
 
     def build(
         self,
@@ -112,30 +109,28 @@ class TreeBuilder:
         on_collision: OnCollision = "raise",
         skip_init: bool = False,
         skip_import: bool = False,
-
-        cache: TreeCache | None = None
     ) -> Tree:
         s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
         b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
         d = conf.DataDefinition(data=data, keymap=keymap)
         configs = conf.TreeConfig(name, self.engine.uri, "tree", cache=None, structure=s, data=d, builder=b)
-        return self._build(configs, cache)
+        return self._build(configs)
 
-    def _build(self, configs: conf.TreeConfig, cache: TreeCache | None = None) -> Tree:
+    def _build(self, configs: conf.TreeConfig) -> Tree:
         b = configs.builder
         if b is None:
             raise ValueError("Builder needs Builder configuration.")
 
         do = self._check_existing(configs.name, b.not_exist, b.skip_init)
         if do is False:
-            return Tree.from_engine(configs.name, self.engine, cache)
+            return Tree.from_engine(configs.name, self.engine)
 
         s = configs.structure
         if s is None:
             raise ValueError("Builder needs Structure configuration.")
         do = self._check_existing_structure(configs.name, s.fields, b.recreate, b.on_change, b.skip_import)
         if do is False:
-            return Tree.from_engine(configs.name, self.engine, cache)
+            return Tree.from_engine(configs.name, self.engine)
 
         if b.skip_init is False:
             tree = self.initialize_tree(configs.name, s.fields, s.indexes, s.unique_constraints, b.on_change)
@@ -146,7 +141,6 @@ class TreeBuilder:
         else:
             tree = Tree.from_engine(configs.name, self.engine)
 
-        tree.set_cache(cache)
         return tree
 
     def initialize_tree(

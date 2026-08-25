@@ -27,7 +27,7 @@ class DataLoader:
     keymap: dict[str, Any] | None
     args: list[Any]
 
-    def __init__(self, loader: Type[Loader], args: list[Any], keymap: dict[str, Any] | None = None):
+    def __init__(self, loader: Type[Loader] | Type[DictLoader], args: list[Any], keymap: dict[str, Any] | None = None) -> None:
         self.loader = loader()
         self.keymap = keymap
         self.args = args
@@ -218,7 +218,7 @@ class Importer:
         return payload
 
     def _build_metadata_payload(self, data: dict[str, Any], nid: int) -> dict[str, Any]:
-        payload = {"id": nid}
+        payload: dict[str, Any] = {"id": nid}
         [payload.update({f.name: data.get(f.name, None)}) for f in self.engine._metadata.columns.values() if f.name not in TreeMetadataDefinition.fk]
         return payload
 

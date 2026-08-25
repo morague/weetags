@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 from hashlib import sha1
+from types import SimpleNamespace 
 
 from typing import Any
 
-from weetags.tree.tree_engine import TreeEngine
 from weetags.common.base import TreeTopologyDefinition
 
-from types import SimpleNamespace 
+
 
 class Node:
     id: int
@@ -36,18 +36,10 @@ class Node:
         self.level = level
         self.__dict__.update(metadata)
         self._modified = False
+        self.__setattr__ = self._inhibitor
 
     def __repr__(self) -> str:
         return f"<Node: {self.name}>"
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        """block update of topology keys, allow other updates"""
-        if name in self.topology_keys:
-            raise AttributeError("topology keys are not modifiable.")
-        self.__dict__[name] = value
-
-        if name in self.metadata_keys:
-            self.__dict__["_modified"] = True
 
     @property
     def degree(self) -> int:
@@ -103,4 +95,12 @@ class Node:
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
-    
+
+    def _inhibitor(self, name: str, value: Any) -> None:
+        """block update of topology keys, allow other updates"""
+        if name in self.topology_keys:
+            raise AttributeError("topology keys are not modifiable.")
+        self.__dict__[name] = value
+
+        if name in self.metadata_keys:
+            self.__dict__["_modified"] = True
