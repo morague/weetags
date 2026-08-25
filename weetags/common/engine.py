@@ -42,7 +42,8 @@ class Engine:
         return cls(engine, uri)
 
     @classmethod
-    def from_configs(cls, uri: dict[str, Any]) -> Engine:
+    def from_configs(cls, configs: dict[str, Any]) -> Engine:
+        uri = configs.get("uri", {})
         url = EngineURI(**uri)
         return cls.from_uri(url)
 
@@ -197,15 +198,19 @@ class BoundEngine(Engine):
         self._metadata = self._table_or_raise(f"_{tree_name}_metadata")
         self.tree = self._table_or_raise(tree_name)
 
-    # @classmethod
-    # def from_uri(cls, uri: EngineURI) -> BoundEngine:
-    #     engine = create_engine(uri.uri, echo=False)
-    #     return cls(engine, uri)
+    @classmethod
+    def binded(cls, tree_name: str, uri: EngineURI) -> BoundEngine:
+        return cls.from_uri(uri).bind(tree_name)
 
-    # @classmethod
-    # def from_configs(cls, uri: dict[str, Any]) -> BoundEngine:
-    #     url = EngineURI(**uri)
-    #     return cls.from_uri(url)
+    @classmethod
+    def from_configs(cls, configs: dict[str, Any]) -> BoundEngine:
+        name = configs.get("name", None)
+        if name is None:
+            raise KeyError(f"Missing key: name.")
+
+        uri = configs.get("uri", {})
+        url = EngineURI(**uri)
+        return cls.from_uri(url).bind(name)
 
     def non_ordered_walk(self) -> Generator[dict[str, Any]]:
         for row in self.execute(select(self.tree)).yield_per(1):

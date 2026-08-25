@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Generator, Type
+from sqlalchemy import ColumnElement
+from typing import Any, Generator, Literal, Type
 
 from weetags.common import Engine, EngineURI
 from weetags.common.loaders import Loader, YamlLoader
@@ -9,9 +10,14 @@ from weetags.common.configs import FieldType, TreeConfig
 from weetags.common.types import TraversalOrder, OnCollision
 from weetags.tree.tree_engine import TreeEngine
 from weetags.common.alteration import Alteration
-from weetags.tree.tree_cache import TreeCache, create_cache_engine
+from weetags.tree.tree_cache import TreeCache
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
+from weetags.tree.fields import TreeFieldsCollection
+
+class TreeAlteration(Alteration):
+    def __init__(self, engine: TreeEngine) -> None:
+        super().__init__(engine)
 
 class TreeTopology:
     name: str
@@ -62,23 +68,21 @@ class TreeMetadata:
     def append_list(self, name: str, key: str, value: Any) -> None:
         self._engine.append_list(name, key, value)
 
-    def append_object(self) -> None:
-        raise NotImplementedError()
-
     def extend_list(self, name: str, key: str, value: list[Any]) -> None:
         self._engine.extend_list(name, key, value)
-
-    def extend_object(self) -> None:
-        raise NotImplementedError()
 
     def pop_list(self, name: str, key: str) -> None:
         self._engine.pop_list(name, key)
 
-    def pop_object(self) -> None:
+    def add_object_key(self) -> None:
+        raise NotImplementedError()
+
+    def pop_object_key(self) -> None:
         raise NotImplementedError()
 
 class Tree:
     name: str
+    f: TreeFieldsCollection
     _engine: TreeEngine
     
     def __init__(
@@ -89,14 +93,14 @@ class Tree:
         
         self.name = name
         self._engine = engine
-        self._engine.reflect()
+        self.sync()
     
     def __repr__(self) -> str:
         return f"<Tree: {self.name}>"
 
     @property
     def Alteration(self) -> Alteration:
-        return Alteration(self.name, self._engine)
+        return TreeAlteration(self._engine)
 
     @property
     def Topology(self) -> TreeTopology:
@@ -176,7 +180,7 @@ class Tree:
 
     @classmethod
     def initialize(cls, name: str, uri: EngineURI, cache: TreeCache | None = None) -> Tree:
-        engine = TreeEngine.from_uri(name, uri, cache)
+        engine = TreeEngine.build(name, uri, cache)
         return cls(name, engine)
 
     @classmethod
@@ -207,6 +211,7 @@ class Tree:
 
     def sync(self) -> None:
         self._engine.reflect()
+        self.f = TreeFieldsCollection.from_table(self._engine.tree)
 
     def set_cache(self, cache: TreeCache | None = None) -> None:
         self._engine.cache = cache
@@ -217,8 +222,11 @@ class Tree:
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))
 
-    def nodes_where(self, conditions: list) -> list[Node]:
-        return self._into_nodes(self._engine.nodes_where(conditions))
+    def nodes(self, *conditions: ColumnElement):
+        return self._engine.nodes(*conditions)
+
+    def nodes_relation(self, relation: Literal[""], *conditions: ColumnElement) -> list[Node]:
+        ...
 
     def parent_node(self, name: str) -> Node | None:
         """return parent node of a given node name"""
@@ -264,7 +272,7 @@ class Tree:
     def _into_node(self, data: dict[str, Any] | None) -> Node | None:
         if data is None:
             return None
-        return Node(**data).connect(self._engine, self.name)
+        return Node(**data)
 
     def _into_nodes(self, data: list[dict[str, Any]]) -> list[Node]:
-        return [Node(**d).connect(self._engine, self.name) for d in data]
+        return [Node(**d) for d in data]

@@ -7,12 +7,12 @@ from functools import wraps
 from collections import deque
 
 from pytest import Session
-from sqlalchemy import Table, create_engine, select, func, ColumnElement
+from sqlalchemy import Result, Table, create_engine, select, func, ColumnElement
 from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator
 
-from weetags.common.types import Relation, TraversalOrder, OnCollision
+from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath
 from weetags.tree.tree_cache import TreeCache
@@ -22,6 +22,7 @@ from weetags.tree.traversal import (
     PostOrderTreeTraversal
 )
 from weetags.tree.importer import Importer
+from weetags.tree.test import TreeResult, TreeSession
 
 
 
@@ -76,17 +77,24 @@ class TreeEngine(BoundEngine):
             self.cache.bind(name, self)
 
     @classmethod
-    def from_uri(cls, name: str, uri: EngineURI, cache: TreeCache | None = None) -> TreeEngine:
-        engine = create_engine(uri.uri, echo=False)
-        return cls(name, engine, uri, cache)
+    def build(cls, tree_name: str, uri: EngineURI, cache: TreeCache | None = None) -> TreeEngine:
+        base = cls.from_uri(uri)
+        return cls.from_engine(tree_name, base, cache)
 
     @classmethod
-    def from_configs(cls, name: str, uri: dict[str, Any], cache: dict[str, Any] | None = None) -> TreeEngine:
-        tree_cache = None
-        if cache is not None:
-            tree_cache = TreeCache(**cache)
+    def from_configs(cls, configs: dict[str, Any]) -> TreeEngine:
+        name = configs.get("name", None)
+        if name is None:
+            raise KeyError(f"Missing key: name.")
+
+        uri = configs.get("uri", {})
         url = EngineURI(**uri)
-        return cls.from_uri(name, url, tree_cache)
+
+        cache_configs = configs.get("cache", None)
+        cache = None
+        if cache_configs is not None:
+            cache = TreeCache(**cache_configs)
+        return cls.build(name, uri, cache)
 
     @classmethod
     def from_engine(cls, name: str, engine: Engine, cache: TreeCache | None = None) -> TreeEngine:
@@ -418,17 +426,27 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], {key:v})
         return poped
 
+    def add_object_key(self, name: str, key: str, path: str, value: str) -> None:
+        node = self._node_or_raise(name)
+        obj = node.get(key, {})
+        for k in path.split("."):
+            ...
+
+    def pop_object_key(self, name: str, key: str, path: str) -> None:
+        node = self._node_or_raise(name)
+        obj = node.get(key, {})
+        for k in path.split("."):
+            ...
+
     def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
         with open(outfile, "w+") as f:
             for node in self.traversal(subtree, order):
                 payload = json.dumps(node)
                 f.write(payload + "\n")
 
-    def nodes(self, *conditions: ColumnElement):
-        from weetags.tree.test import TreeResult, TreeSession
-
+    def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
         stmt = select(self.tree).where(*conditions)
-        with TreeSession(self.engine) as session:
-            res = session.execute(stmt)
-        return res
+        return [n._asdict() for n in self.execute(stmt).fetchall()]
 
+    def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
+        ...
