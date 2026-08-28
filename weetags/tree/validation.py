@@ -183,6 +183,8 @@ class DataValidator:
 
         # once all uniq constraint values are gathered, check against existing namespaces.
         for constraint in self._uniq_constraint:
+            if all([c is None for c in uniq_contraints[constraint]]): # do not compare constraint when fully None.
+                continue
             digest = sha256(json.dumps(uniq_contraints[constraint]).encode()).hexdigest()
             if digest in self._uniq_contraint_namespaces[constraint]:
                 raise KeyError(f"Unique constraint not respected for: {constraint}")
