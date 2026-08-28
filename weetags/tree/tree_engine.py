@@ -14,7 +14,7 @@ from typing import Any, Generator
 
 from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
-from weetags.common.path_utils import NodePath
+from weetags.common.path_utils import NodePath, NodePathCollection
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
     PreOrderTreeTraversal, 
@@ -22,9 +22,6 @@ from weetags.tree.traversal import (
     PostOrderTreeTraversal
 )
 from weetags.tree.importer import Importer
-from weetags.tree.test import TreeResult, TreeSession
-
-
 
 
 def tree_topology_cache(relation: Relation):
@@ -78,7 +75,7 @@ class TreeEngine(BoundEngine):
 
     @classmethod
     def build(cls, tree_name: str, uri: EngineURI, cache: TreeCache | None = None) -> TreeEngine:
-        base = cls.from_uri(uri)
+        base = Engine.from_uri(uri)
         return cls.from_engine(tree_name, base, cache)
 
     @classmethod
@@ -193,39 +190,56 @@ class TreeEngine(BoundEngine):
             siblings = [n for n in siblings if n != name]
         return self._nodes(*siblings)
 
-    @tree_topology_cache("descendant")
-    def descendant_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
-        """TODO: match order type & use asked traversal method"""
-        descendants = []
+    # @tree_topology_cache("descendant")
+    # def descendant_nodes(self, name: str) -> list[dict[str, Any]]:
+    #     descendants = []
 
-        # LEVEL ORDER 
-        queue = deque([name])
-        while len(queue) > 0:
-            node_name = queue.popleft()
-            node = self._node_or_raise(node_name)
-            node_children = node.get("children", [])
-            queue.extend(node_children)
-            if node.get("name") != name:
-                descendants.append(node)
-        return descendants
+    #     # LEVEL ORDER 
+    #     queue = deque([name])
+    #     while len(queue) > 0:
+    #         node_name = queue.popleft()
+    #         node = self._node_or_raise(node_name)
+    #         node_children = node.get("children", [])
+    #         queue.extend(node_children)
+    #         if node.get("name") != name:
+    #             descendants.append(node)
+    #     return descendants
+
+    @tree_topology_cache("descendant")
+    def descendant_nodes(self, name: str) -> list[dict[str, Any]]:
+        paths = self.subtree_topology(name)
+        descendants = NodePathCollection(*paths).descendants_of(name)
+        return self._nodes(*descendants)
+
+    # @tree_topology_cache("ancestor")
+    # def ancestor_nodes(self, name: str) -> list[dict[str, Any]]:
+    #     ancestors = []
+
+    #     node_name = name
+    #     while parent := self.parent_node(node_name):
+    #         node_name = parent["name"]
+    #         ancestors.append(parent)
+    #     return ancestors
 
     @tree_topology_cache("ancestor")
     def ancestor_nodes(self, name: str) -> list[dict[str, Any]]:
-        ancestors = []
+        paths = self.subtree_topology(name)
+        ancestors = NodePathCollection(*paths).ancestors_of(name)
+        return self._nodes(*ancestors)
 
-        node_name = name
-        while parent := self.parent_node(node_name):
-            node_name = parent["name"]
-            ancestors.append(parent)
-        return ancestors
+    # @tree_topology_cache("branch")
+    # def branch_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
+    #     node = self._node_or_raise(name)
+
+    #     ancestors = self.ancestor_nodes(name)
+    #     descendants = self.descendant_nodes(name)
+    #     return ancestors[::-1] + [node] + descendants
 
     @tree_topology_cache("branch")
-    def branch_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
-        node = self._node_or_raise(name)
-
-        ancestors = self.ancestor_nodes(name)
-        descendants = self.descendant_nodes(name)
-        return ancestors[::-1] + [node] + descendants
+    def branch_nodes(self, name: str) -> list[dict[str, Any]]:
+        paths = self.subtree_topology(name)
+        branch = NodePathCollection(*paths).branch_of(name)
+        return self._nodes(*branch)
 
     def lowest_common_ancestor(self, name: str, other_name: str) -> dict[str, Any]:
         node = self._node_or_raise(name)

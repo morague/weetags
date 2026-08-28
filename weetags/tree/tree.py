@@ -14,6 +14,13 @@ from weetags.tree.tree_cache import TreeCache
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
 from weetags.tree.fields import TreeFieldsCollection
+from weetags.tree.update import (
+    JsonObjectAppendList,
+    JsonObjectPopList,
+    JsonObjectExtendList,
+    JsonObjectRemoveKey,
+    JsonObjectUpdateKey
+)
 
 class TreeAlteration(Alteration):
     def __init__(self, engine: TreeEngine) -> None:
@@ -74,11 +81,21 @@ class TreeMetadata:
     def pop_list(self, name: str, key: str) -> None:
         self._engine.pop_list(name, key)
 
-    def add_object_key(self) -> None:
-        raise NotImplementedError()
+    def set_object_key(self, node_name: str, path: str, value: Any) -> None:
+        JsonObjectUpdateKey(self._engine).apply(node_name, path, value)
 
-    def pop_object_key(self) -> None:
-        raise NotImplementedError()
+    def pop_object_key(self, node_name: str, path: str,) -> None:
+        JsonObjectRemoveKey(self._engine).apply(node_name, path)
+
+    def object_append_list(self, node_name: str, path: str, value: Any) -> None:
+        JsonObjectAppendList(self._engine).apply(node_name, path, value)
+
+    def object_extend_list(self, node_name: str, path: str, value: list[Any]) -> None:
+        JsonObjectExtendList(self._engine).apply(node_name, path, value)
+
+    def object_pop_list(self, node_name: str, path: str, index: int) -> None:
+        JsonObjectPopList(self._engine).apply(node_name, path, index)
+
 
 class Tree:
     name: str
@@ -219,6 +236,9 @@ class Tree:
     def width(self, level: int) -> int:
         return self._engine.width(level)
 
+    def search(self, substring: str) -> list[str]:
+        raise NotImplementedError()
+
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))
 
@@ -226,7 +246,7 @@ class Tree:
         return self._engine.nodes(*conditions)
 
     def nodes_relation(self, relation: Literal[""], *conditions: ColumnElement) -> list[Node]:
-        ...
+        raise NotImplementedError()
 
     def parent_node(self, name: str) -> Node | None:
         """return parent node of a given node name"""
@@ -244,12 +264,12 @@ class Tree:
         """return list of ancestors nodes of a given node name"""
         return self._into_nodes(self._engine.ancestor_nodes(name))
 
-    def descendant_nodes(self, name: str, order: TraversalOrder = "level") -> list[Node]:
+    def descendant_nodes(self, name: str) -> list[Node]:
         """return list of descendants nodes of a given node name"""
-        return self._into_nodes(self._engine.descendant_nodes(name, order))
+        return self._into_nodes(self._engine.descendant_nodes(name))
 
-    def branch_nodes(self, name: str, order: TraversalOrder = "pre") -> list[Node]:
-        return self._into_nodes(self._engine.branch_nodes(name, order))
+    def branch_nodes(self, name: str) -> list[Node]:
+        return self._into_nodes(self._engine.branch_nodes(name))
 
     def distance(self, name: str, other_name: str) -> int:
         return self._engine.distance(name, other_name)
