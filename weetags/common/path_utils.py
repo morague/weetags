@@ -39,10 +39,15 @@ class NodePath:
     
     """
 
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self.nodes = path.split(".")
-        self.len = len(self.nodes)
+    def __init__(self, path: str | NodePath) -> None:
+        if isinstance(path, NodePath):
+            self.path = path.path
+            self.nodes = path.nodes
+            self.len = path.len
+        else:
+            self.path = path
+            self.nodes = path.split(".")
+            self.len = len(self.nodes)
 
     def __repr__(self) -> str:
         return f"<NodePath: {self.path}>"
@@ -78,7 +83,7 @@ class NodePath:
         index = self.nodes.index(node)
         if include_node:
             index += 1
-        if index > len(self.nodes):
+        if index >= len(self.nodes):
             raise ValueError("last node from a path has to be excluded")
         return ".".join(self.nodes[index:])
 
@@ -116,52 +121,44 @@ class NodePath:
             yield node
 
 
+class NodePathCollection:
+    paths: list[NodePath]
 
+    def __init__(self, *paths: str | NodePath) -> None:
+        self.paths = [NodePath(path) for path in paths]
 
+    def __repr__(self) -> str:
+        return f"<NodePathCollection: size {len(self.paths)}>"
 
+    def ancestors_of(self, node: str) -> list[str]:
+        ancestors = None
+        for path in self._iter_path_with_node(node):
+            if node == path.nodes[0]:
+                return []
+            subpath = path.rstrip_from(node, include_node=True)
+            ancestors = NodePath(subpath).nodes
+            break
+        if ancestors is None:
+            raise ValueError(f"No paths contains node name: {node}")
+        return ancestors
 
+    def descendants_of(self, node: str) -> list[str]:
+        descendants = []
+        for path in self._iter_path_with_node(node):
+            if node == path.nodes[-1]:
+                return []
+            subpath = path.lstrip_until(node, include_node=True)
+            [descendants.append(n) for n in NodePath(subpath).nodes if n not in descendants]
+        return descendants
 
+    def branch_of(self, node: str) -> list[str]:
+        branch = []
+        for path in self._iter_path_with_node(node):
+            [branch.append(n) for n in path.nodes if n not in branch]
+        return branch
 
-
-    # def prefix_from_node(self, name: str, size: int, include_seperator: bool = True) -> str:
-    #     striped_path = NodePath(self.rstrip_from_node(name, include_seperator))
-    #     return striped_path.prefix(size)
-
-    # def suffix_from_node(self, name: str, size: int, include_seperator: bool = True) -> str:
-    #     striped_path = NodePath(self.lstrip_from_node(name, include_seperator))
-    #     return striped_path.suffix(size)
-
-    # @contains_seperator
-    # def lstrip_from_node(self, seperator: str, /, include_seperator: bool = False) -> str:
-    #     index = self.nodes.index(seperator)
-    #     if include_seperator is False:
-    #         index += 1
-    #     if index == len(self.nodes):
-    #         raise ValueError("last node from a path has to be included")
-    #     return ".".join(self.nodes[index:])
-
-    # @contains_seperator
-    # def rstrip_from_node(self, seperator: str, /, include_seperator: bool = False) -> str:
-    #     index = self.nodes.index(seperator)
-    #     if include_seperator:
-    #         index += 1
-    #     if index == 0:
-    #         raise ValueError("first node from a path has to be included")
-    #     return ".".join(self.nodes[:index])
-
-    # def get_node_before(self, name: str, dist: int) -> str | None:
-    #     index = self.nodes.index(name)
-    #     index = index - dist
-    #     if index < 0:
-    #         return None
-    #     return self.nodes[index]
-
-    # def get_node_after(self, name: str, dist: int) -> str | None:
-    #     index = self.nodes.index(name)
-    #     index = index + dist
-    #     if index >= self.len:
-    #         return None
-    #     return self.nodes[index]
-
-
-
+    def _iter_path_with_node(self, node: str) -> Generator[NodePath]:
+        for path in self.paths:
+            if node not in path.nodes:
+                continue
+            yield path

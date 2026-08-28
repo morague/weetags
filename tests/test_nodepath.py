@@ -1,11 +1,17 @@
 import pytest
-from weetags.common.path_utils import NodePath
+from weetags.common.path_utils import NodePath, NodePathCollection
 
 @pytest.fixture
 def p():
     path = "aaa.bbb.ccc.ddd.eee.fff.ggg"
     p = NodePath(path)
     return p 
+
+@pytest.fixture
+def npc():
+    paths = ["aa.bb.cc.dd.ee", "aa.bb.cc.ff.gg", "aa.bb.cc.hh", "aa.bb.cc.ii.mm.nn", "rr.ss.tt"]
+    c = NodePathCollection(*paths)
+    return c
 
 
 def test_nodepath_contains_node(p) -> None:
@@ -96,3 +102,18 @@ def test_nodepath_rstrip(p) -> None:
     with pytest.raises(ValueError):
         p.rstrip_from("zzz")
         p .rstrip_from("aaa", include_node=True)
+
+def test_npc_ancestors(npc):
+    assert npc.ancestors_of("cc") == ["aa", "bb"]
+    assert npc.ancestors_of("aa") == []
+    with pytest.raises(ValueError):
+        npc.ancestors_of("oo")
+
+def test_npc_descendants(npc):
+    assert npc.descendants_of("tt") == []
+    assert npc.descendants_of("ii") == ["mm", "nn"]
+    assert npc.descendants_of("cc") == ['dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'mm', 'nn']
+
+def test_npc_branch(npc):
+    assert npc.branch_of("cc") == ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'mm', 'nn']
+    assert npc.branch_of("ii") == ['aa', 'bb', 'cc', 'ii', 'mm', 'nn']
