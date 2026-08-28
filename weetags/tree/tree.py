@@ -11,6 +11,7 @@ from weetags.common.types import TraversalOrder, OnCollision
 from weetags.tree.tree_engine import TreeEngine
 from weetags.common.alteration import Alteration
 from weetags.tree.tree_cache import TreeCache
+from weetags.tree.drawer import DrawStyle, TreeDrawer
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
 from weetags.tree.fields import TreeFieldsCollection
@@ -283,11 +284,12 @@ class Tree:
             assert node is not None
             yield node
 
-    def draw(self, subtree: str | None = None, style: None = None) -> None:
-        print(self._draw(subtree, style))
+    def draw(self, subtree: str | None = None, style: DrawStyle = "ascii-ex", extra_spacing: bool = False) -> None:
+        for line in self._draw(subtree, style, extra_spacing):
+            print(line)
 
-    def _draw(self, subtree: str | None = None, style: None = None) -> str:
-        raise NotImplementedError()
+    def _draw(self, subtree: str | None = None, style: DrawStyle = "ascii-ex", extra_spacing: bool = False) -> Generator[str]:
+        yield from TreeDrawer(self._engine).draw(subtree, style, extra_spacing)
 
     def _into_node(self, data: dict[str, Any] | None) -> Node | None:
         if data is None:

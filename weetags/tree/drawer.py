@@ -1,28 +1,84 @@
 from __future__ import annotations 
-from sqlalchemy import Table
+from typing import Generator
 
-from weetags.common import Engine
+from weetags.common.path_utils import NodePath
+from weetags.common import BoundEngine
 from weetags.common.types import DrawStyle
 
-class UNode(list):
+class Unode:
     name: str
+    children: list[Unode]
+    layer: int
+    is_leaf: bool
 
-    def __init__(self, iterable: list[UNode], name: str):
-        super().__init__(iterable)
+    def __init__(self, name: str, layer: int, children: list[Unode]):
         self.name = name
+        self.layer = layer
+        self.children = children
+        self.is_leaf = False
 
+    def __repr__(self) -> str:
+        return f"<Unode(name: {self.name}, layer: {self.layer}, leaf: {self.is_leaf})>"
+
+    def iter(self) -> Generator[Unode]:
+        for index, node in enumerate(self.children):
+            if index == len(self.children) - 1:
+                node.is_leaf = True
+            yield node
+            yield from node.iter()
+
+
+class LinkedTree:
+    tree: list[Unode]
+    nodes: dict[str, Unode]
+
+    def __init__(self) -> None:
+        self.tree = []
+        self.nodes = {}
+
+    @property
+    def base(self) -> Unode:
+        node = self.tree[0]
+        node.is_leaf = True
+        return node
+
+    @classmethod
+    def from_topology(cls, topology: list[str], root: str) -> LinkedTree:
+        tree = cls()
+        for branch in topology:
+            base, path = None,  NodePath(branch)
+            subtree_path = NodePath(path.lstrip_until(root))
+            for index, node in enumerate(subtree_path.nodes):
+                unode = tree.nodes.get(node, None)
+                if tree.nodes.get(node, None) is None:
+                    unode = Unode(node, index, [])
+                    tree.nodes.update({node:unode})
+
+                if base is not None and unode not in base.children:
+                    assert unode is not None
+                    base.children.append(unode)
+                elif base is None and unode not in tree.tree:
+                    assert unode is not None
+                    tree.tree.append(unode)
+                base = unode
+        return tree
+
+    def iter(self) -> Generator[Unode]:
+        for index, node in enumerate(self.tree):
+            if index == len(self.tree) - 1:
+                node.is_leaf = True
+            yield node
+            yield from node.iter()
 
 class TreeDrawer:
-    _engine: Engine
-    name: str
-
-    tree = Table
-    _topology = Table
-    _metadata = Table
+    _engine: BoundEngine
 
     base: str
     style: DrawStyle = "ascii"
+    extra_space: bool = False
 
+    INITIAL_SPACE: int = 1
+    INTERNAL_SPACE: int = 3
     STYLES = {
         "ascii": ("|", "|-- ", "+-- "),
         "ascii-ex": ("\u2502", "\u251c\u2500\u2500 ", "\u2514\u2500\u2500 "),
@@ -32,14 +88,8 @@ class TreeDrawer:
         "ascii-emh": ("\u2502", "\u255e\u2550\u2550 ", "\u2558\u2550\u2550 "),
     }
 
-    IS = " "
-    TS = " " * 3
-
-    def __init__(self, name: str, engine: Engine) -> None:
-        self.name = name
+    def __init__(self, engine: BoundEngine) -> None:
         self._engine = engine
-
-        self._engine.get_tree(name)
 
     @property
     def trunc(self) -> str:
@@ -53,79 +103,47 @@ class TreeDrawer:
     def leaf(self) -> str:
         return TreeDrawer.STYLES[self.style][2]
 
-    def draw(self, subtree: str | None = None, style: DrawStyle = "ascii-ex") -> str:
+    def draw(self, subtree: str | None = None, style: DrawStyle = "ascii-ex", extra_spacing: bool = False) -> Generator[str]:
         self.style = style
+        self.extra_space = extra_spacing
         base = self._get_subtree_base(subtree)
-        topology = self._engine.sub_tree_topology_from_name(base)
+        topology = self._engine.subtree_topology(base)
 
-        d, visited = f"{self.base}\n", [self.base]
-        
-        for index, branch in enumerate(topology):
-            branch = self._branch_lstrip(branch)
-            for i, node in enumerate(branch.split(".")):
-                if node in visited:
-                    continue
+        linkedtree = LinkedTree.from_topology(topology, base)
 
-                
-                
-                """
-                skip trunc layer when next branch (same layer is)
-                peeking in the future 1 time isn't sufficient to avoid unused truncs
-                peeking n times in the future until:
-                    same layer node is !=
-                """
+        root, layers = linkedtree.base, {}
+        yield f"{root.name}"
+        for node in root.iter():
+            yield self.draw_line(node, layers)
+            layers.update({node.layer:node.is_leaf})
 
-                
-                d += self.draw_line(i, 0, node)
-                visited.append(node)
-        print(d)
-
-
-    def draw_line(self, l: int, sl: int, name: str, is_leaf: bool = False) -> str:
-        tree = self.branch
-        if is_leaf:
-            tree = self.leaf
-
-        line = "{trunc}{edge}{name}\n"
-
-        trunc = self.IS + (self.trunc + self.TS) * l
-        edge = tree
-        return line.format(
-            trunc=trunc,
-            edge=edge,
-            name=name
-        )
-
-    def _branch_lstrip(self, branch: str) -> str:
-        meet_base, b = False, []
-        for node in branch.split("."):
-            if meet_base:
-                b.append(node)
-            if node == self.base:
-                meet_base = True
-        return ".".join(b)
-
+    def draw_line(self, node: Unode, layers: dict[int, bool]) -> str:
+        line = self.INITIAL_SPACE * " "
+        for layer in range(0, node.layer):
+            layer += 1
+            if layer == node.layer and node.is_leaf:
+                line += f"{self.leaf}{node.name}" 
+            elif layer == node.layer and node.is_leaf is False:
+                line += f"{self.branch}{node.name}" 
+            elif layers[layer] is False:
+                spacing = self.INTERNAL_SPACE * " "
+                line += f"{self.trunc}{spacing}"
+            elif layers[layer]:
+                spacing = self.INTERNAL_SPACE * " "
+                line += f" {spacing}"
+        return line
 
     def _get_subtree_base(self, subtree: str | None = None) -> str:
         if subtree is None:
-            roots = self._engine._roots(self.name)
+            roots = self._engine.roots(self._engine.name)
             if len(roots) == 0:
-                raise ValueError(f"Tree {self.tree.name} has no root.")
+                raise ValueError(f"Tree {self._engine.tree.name} has no root.")
             elif len(roots) > 1:
-                raise ValueError(f"Tree {self.tree.name} has too many roots")
+                raise ValueError(f"Tree {self._engine.tree.name} has too many roots")
             base = roots[0]["name"]
         else:
-            node = self._engine._node_from_name(subtree)
-            if node is None:
-                raise KeyError(f"Unknown node name: {subtree}")
+            self._engine._node_or_raise(subtree)
             base = subtree
         self.base = base
         return base
 
-
-
-
-
-
-# d = TreeDrawer("languages", Engine.from_uri(EngineURI(database="weetags.sqlite")))
-# d.draw()
