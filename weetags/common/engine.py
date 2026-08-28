@@ -194,6 +194,7 @@ class BoundEngine(Engine):
 
     def __init__(self, tree_name: str, base_engine: BaseEngine, uri: EngineURI) -> None:
         super().__init__(base_engine, uri)
+        self.name = tree_name
         self._topology = self._table_or_raise(f"_{tree_name}_topology")
         self._metadata = self._table_or_raise(f"_{tree_name}_metadata")
         self.tree = self._table_or_raise(tree_name)
