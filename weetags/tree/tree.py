@@ -176,7 +176,7 @@ class Tree:
         return {c.name:FieldType.from_sqlalchemy(c.type).value for c in self._engine._metadata.columns.values()}
 
     @property
-    def info(self) -> dict[str, Any]:
+    def infos(self) -> dict[str, Any]:
         cache = self._engine.cache
         if cache is not None:
             cache = cache.cache_engine.name
@@ -202,15 +202,6 @@ class Tree:
         return cls(name, engine)
 
     @classmethod
-    def from_configs(cls, name: str, uri: dict[str, Any], cache: dict[str, Any] | None = None) -> Tree:
-        tree_cache = None
-        if cache is not None:
-            tree_cache = TreeCache(**cache)
-
-        engine_uri = EngineURI(**uri)
-        return cls.initialize(name, engine_uri, tree_cache)
-
-    @classmethod
     def from_engine(cls, name: str, engine: Engine, cache: TreeCache | None = None) -> Tree:
         tree_engine = TreeEngine.from_engine(name, engine, cache)
         return cls(name, tree_engine)
@@ -219,13 +210,17 @@ class Tree:
     def from_tree_file(cls, path: Path | str, loader: Type[Loader] = YamlLoader) -> Tree:
         path = Path(path)
         configs = TreeConfig.parse_file(path, loader)
+        return cls.from_configs(configs)
 
+    @classmethod
+    def from_configs(cls, configs: TreeConfig) -> Tree:
         kwargs = configs.tree_inline
 
         cache, c = None, kwargs.pop("cache", None)
         if c is not None:
             cache = TreeCache(**c)
         return cls.initialize(**kwargs, cache=cache)
+
 
     def sync(self) -> None:
         self._engine.reflect()
@@ -259,15 +254,15 @@ class Tree:
 
     def sibling_nodes(self, name: str, include_self: bool = False) -> list[Node]:
         """return list of siblings nodes of a given node name"""
-        return self._into_nodes(self._engine.sibling_nodes(name, include_self))
+        return self._into_nodes(self._engine.sibling_nodes(name, include_self=include_self))
 
-    def ancestor_nodes(self, name) -> list[Node]:
+    def ancestor_nodes(self, name, include_self: bool = False) -> list[Node]:
         """return list of ancestors nodes of a given node name"""
-        return self._into_nodes(self._engine.ancestor_nodes(name))
+        return self._into_nodes(self._engine.ancestor_nodes(name, include_self=include_self))
 
-    def descendant_nodes(self, name: str) -> list[Node]:
+    def descendant_nodes(self, name: str, include_self: bool = False) -> list[Node]:
         """return list of descendants nodes of a given node name"""
-        return self._into_nodes(self._engine.descendant_nodes(name))
+        return self._into_nodes(self._engine.descendant_nodes(name, include_self=include_self))
 
     def branch_nodes(self, name: str) -> list[Node]:
         return self._into_nodes(self._engine.branch_nodes(name))

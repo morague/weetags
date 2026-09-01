@@ -61,7 +61,10 @@ class TreeBuilder:
     @classmethod
     def build_from_tree_file(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
         configs = conf.TreeConfig.parse_file(path, loader)
+        return cls.from_configs(configs)
 
+    @classmethod
+    def from_configs(cls, configs: TreeConfig) -> Tree:
         kwargs = configs.tree_inline
         builder = cls.from_uri(configs.uri)
         tree = builder._build(configs)
@@ -70,8 +73,9 @@ class TreeBuilder:
         if c is not None:
             cache = TreeCache(**c)
             tree.set_cache(cache)
-        return tree
-        
+        return tree        
+
+    
     def build_from_file(
         self,
         name: str, 

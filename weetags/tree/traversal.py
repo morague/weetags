@@ -6,6 +6,7 @@ from sqlalchemy.engine import Engine as BaseEngine
 from typing import Any, Generator
 
 from weetags.common import EngineURI, BoundEngine
+from weetags.common.serializer import BaseSerializer
 
 
 class TreeTraversal(ABC, BoundEngine):
@@ -13,8 +14,8 @@ class TreeTraversal(ABC, BoundEngine):
     topology: list[str]
     visited: list[str]
 
-    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI):
-        super().__init__(name, base_engine, uri)
+    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, serializer: BaseSerializer | None = None) -> None:
+        super().__init__(name, base_engine, uri, serializer)
         self.name = name
 
     @abstractmethod
@@ -27,8 +28,8 @@ class PreOrderTreeTraversal(TreeTraversal):
     topology: list[str]
     visited: list[str]
 
-    def __init__(self, name, base_engine, uri):
-        super().__init__(name, base_engine, uri)
+    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, serializer: BaseSerializer | None = None) -> None:
+        super().__init__(name, base_engine, uri, serializer)
 
     def walk(self, sub_tree: str):
         _ = self._node_or_raise(sub_tree)
@@ -53,8 +54,8 @@ class InOrderTreeTraversal(TreeTraversal):
     topology: list[str]
     visited: list[str]
 
-    def __init__(self, name, base_engine, uri):
-        super().__init__(name, base_engine, uri)
+    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, serializer: BaseSerializer | None = None) -> None:
+        super().__init__(name, base_engine, uri, serializer)
 
     def walk(self, sub_tree):
         _ = self._node_or_raise(sub_tree)
@@ -119,8 +120,8 @@ class PostOrderTreeTraversal(TreeTraversal):
     topology: list[str]
     visited: list[str]
 
-    def __init__(self, name, base_engine, uri):
-        super().__init__(name, base_engine, uri)
+    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, serializer: BaseSerializer | None = None) -> None:
+        super().__init__(name, base_engine, uri, serializer)
 
     def walk(self, sub_tree):
         _ = self._node_or_raise(sub_tree)

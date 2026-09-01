@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 import re
-from sqlalchemy import MetaData, Table, Column, Index, UniqueConstraint, Result, Executable
+from sqlalchemy import MetaData, Row, Table, Column, Index, UniqueConstraint, Result, Executable
 from sqlalchemy import create_engine, select, insert, update, delete, text, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateSchema
 from sqlalchemy.engine import Engine as BaseEngine
 
-from typing import Any, Generator
+from typing import Any, Generator, Type
 
 from weetags.common.types import AcceptedFieldType
 from weetags.common.configs import FieldType
 from weetags.common.uri import EngineURI
+import weetags.common.serializer as serializers
 
 
 class Engine:
     uri: EngineURI
+    _serializer: serializers.BaseSerializer
 
-    def __init__(self, base_engine: BaseEngine, uri: EngineURI) -> None:
+    def __init__(self, base_engine: BaseEngine, uri: EngineURI, serializer: serializers.BaseSerializer | None = None) -> None:
         self.uri = uri
         self.engine = base_engine
         self.sessionmaker = sessionmaker(bind=self.engine)
@@ -26,6 +28,11 @@ class Engine:
         self.reflect()
         if self.uri.dialect == "sqlite":
             self.execute_statement("PRAGMA foreign_keys = ON;")
+
+        self._serializer  = serializers.DefaultSerializer()
+        if serializer is not None:
+            self._serializer  = serializer
+
 
     @property
     def is_bound(self) -> bool:
@@ -52,6 +59,9 @@ class Engine:
         
     def reflect(self, schema: str | None = None) -> None:
         self.metadata.reflect(self.engine, schema=schema, views=True)
+
+    def set_serializer(self, serializer: serializers.BaseSerializer) -> None:
+        self._serialize = serializer
 
     def execute_statement(self, stmt: str) -> None:
         with self.sessionmaker() as session:
@@ -131,11 +141,17 @@ class Engine:
 
     def _write(self, table: Table, data: dict[str, Any]) -> int:
         stmt = insert(table).values(**data).returning(table.c.id)
-        return self.execute(stmt, commit=True).scalar_one()
+        with self.sessionmaker() as session:
+            res = session.execute(stmt).scalar_one()
+            session.commit()
+        return res
 
     def _write_many(self, table: Table, data: list[dict[str, Any]]) -> list[int]:
         stmt = table.insert().returning(table.c.id)
-        return list(self.execute(stmt, data, commit=True).scalars().all())
+        with self.sessionmaker() as session:
+            res = session.execute(stmt, params=data).scalars().all()
+            session.commit()
+        return list(res)
 
     def _delete(self, table: Table, *nids: int) -> None:
         stmt = delete(table).where(table.c.id.in_(nids))
@@ -185,6 +201,28 @@ class Engine:
                 raise KeyError(f"Unknown field: {f}")
         return True
 
+    def _serialize_value(self, stmt: Executable, args: list[Any] | None = None, commit: bool = False) -> Any:
+        res = self.execute(stmt, args, commit)
+        return self._serializer.serialize_value(res.scalar_one())
+
+    def _serialize_list(self, stmt: Executable, args: list[Any] | None = None, commit: bool = False) -> list[Any]:
+        res = self.execute(stmt, args, commit)
+        return self._serializer.serialize_list(list(res.scalars().all()))
+
+    def _serialize_record(self, stmt: Executable, args: list[Any] | None = None, commit: bool = False) -> dict[str,Any] | None:
+        res = self.execute(stmt, args, commit).fetchone()
+        if res is None:
+            return
+        return self._serializer.serialize_record(res)
+
+    def _serialize_records(self, stmt: Executable, args: list[Any] | None = None, commit: bool = False) -> list[dict[str,Any]]:
+        res = self.execute(stmt, args, commit).fetchall()
+        return self._serializer.serialize_records(list(res))
+
+    def _serialize_row(self, row: Row) -> dict[str, Any]:
+        return self._serializer.serialize_record(row)
+
+
 class BoundEngine(Engine):
     uri: EngineURI
     name: str
@@ -192,8 +230,8 @@ class BoundEngine(Engine):
     _topology: Table
     _metadata: Table
 
-    def __init__(self, tree_name: str, base_engine: BaseEngine, uri: EngineURI) -> None:
-        super().__init__(base_engine, uri)
+    def __init__(self, tree_name: str, base_engine: BaseEngine, uri: EngineURI, serializer: serializers.BaseSerializer | None = None) -> None:
+        super().__init__(base_engine, uri, serializer)
         self.name = tree_name
         self._topology = self._table_or_raise(f"_{tree_name}_topology")
         self._metadata = self._table_or_raise(f"_{tree_name}_metadata")
@@ -215,11 +253,19 @@ class BoundEngine(Engine):
 
     def non_ordered_walk(self) -> Generator[dict[str, Any]]:
         for row in self.execute(select(self.tree)).yield_per(1):
-            yield row._asdict()
+            yield self._serialize_row(row)
+
+    def _non_ordered_walk(self, fields: list[str] | None = None, page: int = 0, page_size: int= 100) -> list[dict[str, Any]]:
+        offset = page * page_size
+        limit = page_size
+
+        stmt = select(*self._get_selected(fields)).limit(limit).offset(offset)
+        print(stmt)
+        return self._serialize_records(stmt)
 
     def subtree(self, path: str) -> list[dict[str, Any]]:
         stmt = select(self.tree).where(self.tree.c.path.like(f"{path}%")).order_by(self.tree.c.path)
-        return [r._asdict() for r in self.execute(stmt).fetchall()]
+        return self._serialize_records(stmt)
 
     def subtree_topology(self, name: str) -> list[str]:
         node = self._node_or_raise(name)
@@ -234,7 +280,7 @@ class BoundEngine(Engine):
             )
             .order_by(self.tree.c.path)
         )
-        return list(self.execute(stmt).scalars().all())
+        return self._serialize_list(stmt)
 
     def write_topology(self, data: dict[str, Any]) -> int:
         return self._write(self._topology, data)
@@ -268,39 +314,40 @@ class BoundEngine(Engine):
             self._remove_child(parent, name)
         self.delete_topology(*nids)
 
-    def _node(self, name: str) -> dict[str, Any] | None:
-        stmt = select(self.tree).where(self.tree.c.name == name)
-        node = self.execute(stmt).fetchone()
-        if node is not None:
-            node = node._asdict()
-        return node
+    def _node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
+        stmt = select(*self._get_selected(fields)).where(self.tree.c.name == name)
+        return self._serialize_record(stmt)
 
-    def _node_or_raise(self, name: str) -> dict[str, Any]:
-        node = self._node(name)
+    def _node_or_raise(self, name: str, fields: list[str] | None = None) -> dict[str, Any]:
+        node = self._node(name, fields)
         if node is None:
             raise ValueError(f"Unknown node name: {name}")
         return node
 
-    def _nodes(self, *names: str) -> list[dict[str, Any]]:
-        stmt = select(self.tree).where(self.tree.c.name.in_(names))
-        return [n._asdict() for n in self.execute(stmt).fetchall()]
+    def _nodes(self, *names: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
+        stmt = select(*self._get_selected(fields)).where(self.tree.c.name.in_(names)).order_by(self.tree.c.path)
+        return self._serialize_records(stmt)
 
-    def _node_from_nid(self, nid: int) -> dict[str, Any] | None:
-        stmt = select(self.tree).where(self.tree.c.id == nid)
-        node = self.execute(stmt).fetchone()
-        if node is not None:
-            node = node._asdict()
-        return node
+    def _node_from_nid(self, nid: int, fields: list[str] | None = None) -> dict[str, Any] | None:
+        stmt = select(*self._get_selected(fields)).where(self.tree.c.id == nid)
+        return self._serialize_record(stmt)
 
-    def _node_from_nid_or_raise(self, nid: int) -> dict[str, Any]:
-        node = self._node_from_nid(nid)
+    def _node_from_nid_or_raise(self, nid: int, fields: list[str] | None = None) -> dict[str, Any]:
+        node = self._node_from_nid(nid, fields)
         if node is None:
             raise ValueError(f"Unknown node nid: {nid}")
         return node
 
-    def _nodes_from_nid(self, *nids: int) -> list[dict[str, Any]]:
-        stmt = select(self.tree).where(self.tree.c.id.in_(nids))
-        return [n._asdict() for n in self.execute(stmt).fetchall()]
+    def _nodes_from_nid(self, *nids: int, fields: list[str] | None = None) -> list[dict[str, Any]]:
+        stmt = select(*self._get_selected(fields)).where(self.tree.c.id.in_(nids)).order_by(self.tree.c.path)
+        return self._serialize_records(stmt)
+
+    def _field(self, name: str, distinct: bool = False) -> list[Any]:
+        field = self._get_selected([name])[0]
+        if distinct:
+            field = func.distinct(field)
+        stmt = select(field)
+        return list(self.execute(stmt).scalars().all())
 
     def _add_child(self, name: str, child: str) -> None:
         node = self._node_or_raise(name)
@@ -338,9 +385,17 @@ class BoundEngine(Engine):
         node = self._node_or_raise(name)
         self.update_topology([node["id"]], {"parent": new_parent_name})
 
+    def _get_selected(self, fields: list[str] | None = None) -> list[Table | Column]:
+        if fields is None:
+            return [self.tree]
 
-
-
+        columns = []
+        for f in fields:
+            column = getattr(self.tree.c, f, None)
+            if column is None:
+                raise KeyError(f"Unknown field name: {f}.")
+            columns.append(column)
+        return columns
 
 
 

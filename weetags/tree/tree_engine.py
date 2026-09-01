@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from http.client import ImproperConnectionState
 import json
 from pathlib import Path
 from functools import wraps
-from collections import deque
 
-from pytest import Session
-from sqlalchemy import Result, Table, create_engine, select, func, ColumnElement
+
+
+from sqlalchemy import Table, create_engine, select, func, ColumnElement
 from sqlalchemy.engine import Engine as BaseEngine
 
-from typing import Any, Generator
+from typing import Any, Generator, Type
 
 from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
+import weetags.common.serializer as serializers
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
     PreOrderTreeTraversal, 
@@ -66,8 +66,15 @@ class TreeEngine(BoundEngine):
     _topology: Table
     _metadata: Table
 
-    def __init__(self, name: str, base_engine: BaseEngine, uri: EngineURI, cache: TreeCache | None = None):
-        super().__init__(name, base_engine, uri)
+    def __init__(
+        self, 
+        name: str, 
+        base_engine: BaseEngine, 
+        uri: EngineURI, 
+        cache: TreeCache | None = None, 
+        serializer: serializers.BaseSerializer | None = None
+    ) -> None:
+        super().__init__(name, base_engine, uri, serializer)
 
         self.cache = cache
         if self.cache is not None:
@@ -85,7 +92,8 @@ class TreeEngine(BoundEngine):
             raise KeyError(f"Missing key: name.")
 
         uri = configs.get("uri", {})
-        url = EngineURI(**uri)
+        if isinstance(uri, dict):
+            uri = EngineURI(**uri)
 
         cache_configs = configs.get("cache", None)
         cache = None
@@ -105,51 +113,39 @@ class TreeEngine(BoundEngine):
     # TREE PROPERTIES
     def tree_size(self) -> int:
         stmt = select(func.count(self.tree.c.id))
-        with self.sessionmaker() as session:
-            data = session.execute(stmt).scalar_one()
-        return data
+        return self._serialize_value(stmt)
 
     def tree_degree(self) -> int:
         stmt = select(func.max(func.json_array_length(self.tree.c.children)))
-        with self.sessionmaker() as session:
-            tree_degree = session.execute(stmt).scalar_one()
-        return tree_degree
+        return self._serialize_value(stmt)
 
     def leaves(self) -> list[dict[str, Any]]:
         stmt = select(self.tree).where(func.json_array_length(self.tree.c.children) == 0)
-        with self.sessionmaker() as session:
-            leaves = session.execute(stmt).fetchall()
-        return [d._asdict() for d in leaves]
+        return self._serialize_records(stmt)
 
     def breadth(self) -> int:
         stmt = select(func.count(self.tree.c.id)).where(func.json_array_length(self.tree.c.children) == 0)
-        with self.sessionmaker() as session:
-            breadth = session.execute(stmt).scalar_one()
-        return breadth
+        return self._serialize_value(stmt)
 
     def tree_depth(self) -> int:
         stmt = select(func.max(self.tree.c.level))
-        with self.sessionmaker() as session:
-            depth = session.execute(stmt).scalar_one()
-        return depth
+        return self._serialize_value(stmt)
 
     def width(self, level: int) -> int:
         if level > self.tree_depth():
             raise ValueError("Tree depth is lower than level.")
+
         stmt = select(func.count(self.tree.c.id)).where(self.tree.c.level == level)
-        with self.sessionmaker() as session:
-            width = session.execute(stmt).scalar_one()
-        return width
+        return self._serialize_value(stmt)
         
-    def root(self) -> dict[str, Any]:
-        stmt = select(self.tree).where(self.tree.c.parent == None)
-        with self.sessionmaker() as session:
-            data = session.execute(stmt).fetchall()
+    def root(self, fields: list[str] | None = None) -> dict[str, Any]:
+        stmt = select(*self._get_selected(fields)).where(self.tree.c.parent == None)
+        data = self._serialize_records(stmt)
         if len(data) == 0:
             raise ValueError(f"Tree {self.tree.name} has no root.")
         elif len(data) > 1:
             raise ValueError(f"Tree {self.tree.name} has too many roots")
-        return data[0]._asdict()
+        return data[0]
 
     def _n_roots(self) -> int:
         return len(self.roots(self.name))
@@ -158,27 +154,27 @@ class TreeEngine(BoundEngine):
     def node(self, name: str) -> dict[str, Any] | None:
         return self._node(name)
 
-    def nodes_where(self, conditions: list) -> list[dict[str, Any]]:
-        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
-        with self.sessionmaker() as session:
-            nodes = session.execute(stmt()).fetchall()
-        return [n._asdict() for n in nodes]
+    def nodes_where(self, conditions: list, fields: list[str] | None = None) -> list[dict[str, Any]]:
+        if fields is None:
+            fields = []
+        stmt = QueryBuilder(self.tree, self.metadata).select().fields_from_str(*fields).where_from_str(conditions).order_by(self.tree.c.path)
+        return self._serialize_records(stmt())
 
     @tree_topology_cache("parent")
-    def parent_node(self, name: str) -> dict[str, Any] | None:
-        node = self._node_or_raise(name)        
+    def parent_node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
+        node = self._node_or_raise(name, fields)        
         parent_name = node.get("parent", None)
         if parent_name is None:
             return None
         return self._node(parent_name)
 
     @tree_topology_cache("children")
-    def children_nodes(self, name: str) -> list[dict[str, Any]]:
+    def children_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         node = self._node_or_raise(name)
         children_names = node.get("children",  [])
-        return self._nodes(*children_names)
+        return self._nodes(*children_names, fields=fields)
 
-    def sibling_nodes(self, name: str, include_self: bool = False) -> list[dict[str, Any]]:
+    def sibling_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         parent = self.parent_node(name)
         if parent is None:
             return []
@@ -188,60 +184,31 @@ class TreeEngine(BoundEngine):
         siblings = parent_node.get("children", [])
         if include_self is False:
             siblings = [n for n in siblings if n != name]
-        return self._nodes(*siblings)
+        return self._nodes(*siblings, fields= fields)
 
-    # @tree_topology_cache("descendant")
-    # def descendant_nodes(self, name: str) -> list[dict[str, Any]]:
-    #     descendants = []
-
-    #     # LEVEL ORDER 
-    #     queue = deque([name])
-    #     while len(queue) > 0:
-    #         node_name = queue.popleft()
-    #         node = self._node_or_raise(node_name)
-    #         node_children = node.get("children", [])
-    #         queue.extend(node_children)
-    #         if node.get("name") != name:
-    #             descendants.append(node)
-    #     return descendants
-
-    @tree_topology_cache("descendant")
-    def descendant_nodes(self, name: str) -> list[dict[str, Any]]:
+    @tree_topology_cache("descendants")
+    def descendant_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         descendants = NodePathCollection(*paths).descendants_of(name)
-        return self._nodes(*descendants)
+        if include_self:
+            descendants.insert(0, name)
+        return self._nodes(*descendants, fields= fields)
 
-    # @tree_topology_cache("ancestor")
-    # def ancestor_nodes(self, name: str) -> list[dict[str, Any]]:
-    #     ancestors = []
-
-    #     node_name = name
-    #     while parent := self.parent_node(node_name):
-    #         node_name = parent["name"]
-    #         ancestors.append(parent)
-    #     return ancestors
-
-    @tree_topology_cache("ancestor")
-    def ancestor_nodes(self, name: str) -> list[dict[str, Any]]:
+    @tree_topology_cache("ancestors")
+    def ancestor_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         ancestors = NodePathCollection(*paths).ancestors_of(name)
-        return self._nodes(*ancestors)
+        if include_self:
+            ancestors.append(name)
+        return self._nodes(*ancestors, fields= fields)
 
-    # @tree_topology_cache("branch")
-    # def branch_nodes(self, name: str, order: TraversalOrder = "level") -> list[dict[str, Any]]:
-    #     node = self._node_or_raise(name)
-
-    #     ancestors = self.ancestor_nodes(name)
-    #     descendants = self.descendant_nodes(name)
-    #     return ancestors[::-1] + [node] + descendants
-
-    @tree_topology_cache("branch")
-    def branch_nodes(self, name: str) -> list[dict[str, Any]]:
+    @tree_topology_cache("branchs")
+    def branch_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         branch = NodePathCollection(*paths).branch_of(name)
-        return self._nodes(*branch)
+        return self._nodes(*branch, fields= fields)
 
-    def lowest_common_ancestor(self, name: str, other_name: str) -> dict[str, Any]:
+    def lowest_common_ancestor(self, name: str, other_name: str, fields: list[str] | None = None) -> dict[str, Any]:
         node = self._node_or_raise(name)
         other = self._node_or_raise(other_name)
 
@@ -249,7 +216,7 @@ class TreeEngine(BoundEngine):
         other_path = NodePath(other["path"])
         for ancestor_name in node_path.nodes[::-1]:
             if ancestor_name in other_path.nodes:
-                ancestor = self._node_or_raise(ancestor_name)
+                ancestor = self._node_or_raise(ancestor_name, fields= fields)
                 return ancestor
         raise KeyError("Unable to find a common ancestor")
 
@@ -276,11 +243,11 @@ class TreeEngine(BoundEngine):
         base = sub_tree or self.root()["name"]
         match order:
             case "pre":
-                yield from PreOrderTreeTraversal(self.name, self.engine, self.uri).walk(base)
+                yield from PreOrderTreeTraversal(self.name, self.engine, self.uri, self._serializer).walk(base)
             case "in":
-                yield from InOrderTreeTraversal(self.name, self.engine, self.uri).walk(base)
+                yield from InOrderTreeTraversal(self.name, self.engine, self.uri, self._serializer).walk(base)
             case "post":
-                yield from PostOrderTreeTraversal(self.name, self.engine, self.uri).walk(base)
+                yield from PostOrderTreeTraversal(self.name, self.engine, self.uri, self._serializer).walk(base)
             case "level":
                 yield from self.level_order_traversal(base)
             case _:
@@ -335,10 +302,8 @@ class TreeEngine(BoundEngine):
         self.delete_topology(node["id"])
 
     def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
-        with self.sessionmaker() as session:
-            nodes = session.execute(stmt()).fetchall()
-        names = [n._asdict()["name"] for n in nodes]
+        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.name).where_from_str(conditions)
+        names = self._serialize_list(stmt())
         [self.remove_node(name, force) for name in names]
 
     def prune_subtree(self, name: str) -> None:
@@ -350,10 +315,8 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], values)
 
     def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().where_from_str(conditions)
-        with self.sessionmaker() as session:
-            nodes = session.execute(stmt()).fetchall()
-        nids = [n._asdict()["id"] for n in nodes]
+        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.id).where_from_str(conditions)
+        nids = self._serialize_list(stmt())
         self.update_metadata(nids, values)
 
     def update_node_name(self, name: str, new_name: str) -> None:
@@ -440,18 +403,6 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], {key:v})
         return poped
 
-    def add_object_key(self, name: str, key: str, path: str, value: str) -> None:
-        node = self._node_or_raise(name)
-        obj = node.get(key, {})
-        for k in path.split("."):
-            ...
-
-    def pop_object_key(self, name: str, key: str, path: str) -> None:
-        node = self._node_or_raise(name)
-        obj = node.get(key, {})
-        for k in path.split("."):
-            ...
-
     def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
         with open(outfile, "w+") as f:
             for node in self.traversal(subtree, order):
@@ -460,7 +411,13 @@ class TreeEngine(BoundEngine):
 
     def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
         stmt = select(self.tree).where(*conditions)
-        return [n._asdict() for n in self.execute(stmt).fetchall()]
+        return self._serialize_records(stmt)
 
     def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
         ...
+
+    def search(self, value: Any, key: str = "name", fields: list[str] | None = None) -> list[dict[str, Any]]:
+        f = self._field_or_raise(self.tree, key)
+        stmt = select(*self._get_selected(fields)).where(f.ilike(f"%{value}%"))
+        return self._serialize_records(stmt)
+    

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Type, Any
-
 from sqlalchemy import Table
+
+from typing import Type, Any
 
 
 OP = {

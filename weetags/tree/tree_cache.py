@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from sqlalchemy import desc
 
-from weetags.common import Engine
+from weetags.common import BoundEngine
 from weetags.common.path_utils import NodePath
 from weetags.common.cache import (
     CacheEngine, 
@@ -31,25 +31,25 @@ class TreeCache:
         self.cache_engine = create_cache_engine(cache, **opts)
         self.__dict__.update(**opts)
 
-    def bind(self, tree_name: str, engine: Engine) -> TreeCache:
+    def bind(self, tree_name: str, engine: BoundEngine) -> TreeCache:
         self.tree_name = tree_name
         self._engine = engine
         self.reflect()
         return self
 
     def reflect(self) -> None:
-        self._engine.get_tree(self.tree_name)
+        self._engine.bind(self.tree_name)
         self._set_topology()
         self._set_references()
 
     def _set_topology(self) -> None:
-        roots = self._engine._roots(self.tree_name)
+        roots = self._engine.roots(self.tree_name)
         if len(roots) > 1:
             raise ValueError("too many roots")
         if len(roots) == 0:
             raise ValueError("No root node found")
         root = roots[0]
-        topology = self._engine.sub_tree_topology_from_name(root["name"])
+        topology = self._engine.subtree_topology(root["name"])
         self.set(f"{self.tree_name}_topology", topology)
 
     def _set_references(self) -> None:
