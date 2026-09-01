@@ -16,3 +16,10 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
 ]
+server = [
+    "argon2-cffi>=25.1.0",
+    "pydantic>=2.13.5",
+    "pyjwt>=2.13.0",
+    "sanic==25.12.1",
+    "sanic-ext==25.12.0",
+]
