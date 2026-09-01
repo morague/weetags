@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    TEXT,
     Table,
     Column, 
     ForeignKey,
@@ -8,24 +9,53 @@ from sqlalchemy import (
     Text,
     Boolean,
     JSON, 
-    DateTime
+    DateTime,
+    false
 )
 
 from weetags.common.configs import FieldDefinition
 
-"""
-
-TOPOLOGY                    METADATA
-
-                TREE
-
-
-"""
 
 def field_is_reserved(field: str) -> bool:
     if field in TreeTopologyDefinition().namespace:
         raise KeyError(f"Field name: {field} is a reserved namespace.")
     return True
+
+
+class TreeUsers(object):
+    columns = [
+        Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("username", Text, unique=True, nullable=False, index=True),
+        Column("password_hash", Text, nullable=False),
+        Column("roles", JSON, nullable=False),
+    ]
+
+    def __init__(self) -> None:
+        self.columns = TreeUsers.columns
+
+class TreePermissions(object):
+    columns = [
+        Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("type", Text, nullable=False),
+        Column("method", Text, nullable=False),
+        Column("path", Text, nullable=True),
+        Column("role", Text, nullable=False),
+        Column("priority", Integer, nullable=False),
+    ]
+
+    def __init__(self) -> None:
+        self.columns = TreePermissions.columns
+
+# class TreeRules(object):
+#     columns = [
+#         Column("rule_id", Integer, primary_key=True, autoincrement=True),
+#         Column("path", Text, nullable=False),
+#         Column("role", Text, nullable=False),
+#     ]
+
+#     def __init__(self) -> None:
+#         self.columns = TreeRules.columns
+
 
 class TreeTopologyDefinition(object):
     
