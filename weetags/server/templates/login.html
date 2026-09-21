@@ -1,0 +1,46 @@
+{% extends "index.html" %}
+
+{% block head %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+    <link rel="stylesheet" href="/static/css/main.css"/>
+    <title>Weetags | login</title>
+{% endblock %}
+
+{% block main %}
+    <section class="hero is-fullheight">
+        <div class="hero-body">
+
+            <div class="container">
+                <div class="column is-4 is-offset-4">
+                    <div class="box">
+                        <h2 class="title is-2">Login</h2>
+                        <form action="/v1/auth" method="post">
+                            <div class="field">
+                                <label for="username" class="label">Username</label>
+                                <div class="control">
+                                    <input name="username" class="input is-primary" type="text" placeholder="Username">
+                                </div>
+                            </div>
+                    
+                            <div class="field">
+                                <label for="password" class="label">Password</label>
+                                <div class="control">
+                                    <input name="password" class="input is-primary" type="password" placeholder="Password">
+                                </div>
+                            </div>
+                            <input name="set_cookie" type="checkbox" value="set_cookie" checked hidden>
+                            <input name="redirect" type="checkbox" value="redirect" checked hidden>
+                            <div class="field is-grouped is-grouped-right">
+                                <div class="control">
+                                    <button class="button is-primary" type="submit">Login</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}

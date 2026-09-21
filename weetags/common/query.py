@@ -26,7 +26,7 @@ class SQLConditionParser:
     def parse(self, conditions: list[tuple[str, str | tuple, str] | str]) -> tuple[list[Table], ColumnElement | None]:
         condition, operator = None, "__and__"
         for block in conditions:
-            if isinstance(block, tuple): # or isinstance(block, list)
+            if isinstance(block, tuple) or isinstance(block, list):
                 cond = self._parse_condition_block(block)
                 if condition is None:
                     condition = cond
@@ -121,6 +121,7 @@ class QueryBuilder:
         self._limit = None
         self._offset = None
         self._from = [tree]
+        self._fields = []
         self._values = {}
         self._where = []
         self._order_by = []
@@ -212,7 +213,7 @@ class QueryBuilder:
         self._from.extend(tables)
 
         if where is not None:
-            return self.where(*where)
+            return self.where(where)
         return self
 
     def _get_column(self, field: str, table: Table) -> Column:

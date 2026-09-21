@@ -64,7 +64,7 @@ class TreeBuilder:
         return cls.from_configs(configs)
 
     @classmethod
-    def from_configs(cls, configs: TreeConfig) -> Tree:
+    def from_configs(cls, configs: conf.TreeConfig) -> Tree:
         kwargs = configs.tree_inline
         builder = cls.from_uri(configs.uri)
         tree = builder._build(configs)

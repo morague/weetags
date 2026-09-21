@@ -63,6 +63,11 @@ class Engine:
     def set_serializer(self, serializer: serializers.BaseSerializer) -> None:
         self._serialize = serializer
 
+    def execute_str_statement(self, stmt: str) -> Result:
+        with self.sessionmaker() as session:
+            r = session.execute(text(stmt))
+        return r
+
     def execute_statement(self, stmt: str) -> None:
         with self.sessionmaker() as session:
             session.execute(text(stmt))
@@ -156,6 +161,10 @@ class Engine:
     def _delete(self, table: Table, *nids: int) -> None:
         stmt = delete(table).where(table.c.id.in_(nids))
         self.execute(stmt, commit=True)
+
+    def _clear(self, table: Table) -> None:
+        stmt = delete(table)
+        self.execute(stmt, commit=True)
  
     def _update(self,  table: Table, nids: list[int], values: dict[str, Any]) -> None:
         self._test_fields(table, list(values.keys()))
@@ -163,15 +172,18 @@ class Engine:
         self.execute(stmt, commit=True)
 
     def _drop(self, name: str) -> None:
-        self.metadata.reflect(self.engine)
         for table in self._tables(name):
             table.drop(self.engine)
 
-    def _table_or_raise(self, name: str) -> Table:
+    def _table(self, name: str) -> Table | None:
         tables = self.metadata.tables 
         table = tables.get(name, None)
         if table is None:
             table = tables.get("main.{name}", None)
+        return table        
+
+    def _table_or_raise(self, name: str) -> Table:
+        table = self._table(name)
         if table is None:
             raise KeyError(f"Unknown Table: {name}.")
         return table
@@ -260,7 +272,6 @@ class BoundEngine(Engine):
         limit = page_size
 
         stmt = select(*self._get_selected(fields)).limit(limit).offset(offset)
-        print(stmt)
         return self._serialize_records(stmt)
 
     def subtree(self, path: str) -> list[dict[str, Any]]:

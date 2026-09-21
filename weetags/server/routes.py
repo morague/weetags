@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 
-from sanic import Blueprint, HTTPResponse, Request, json, redirect
-from sanic.response import JSONResponse, ResponseStream
+from pydantic import Json
+from sanic import Blueprint, HTTPResponse, Request, json, redirect, html
+from sanic.response import JSONResponse, ResponseStream, HTTPResponse
+from sanic_ext import render
 
-
+from weetags.common.utils import OP
 from weetags.tree.tree_engine import TreeEngine
 from weetags.tree.tree import Tree
 import weetags.server.arguments as arg
-from weetags.server.utils import get_engine
+from weetags.server.utils import get_engine, generate_notification_payload
+from weetags.server.authentication import Authenticator
 
 
 """
+/auth
+/login
 
 /weetags
     /info
@@ -49,10 +54,45 @@ args:
     offset (int)
 """
 
-weetagsbp = Blueprint("nodes", "/", version="v1")
+weetagsbp = Blueprint("weetags", "/", version="v1")
+auth = Blueprint("auth", "/", version="v1")
 nodesbp = Blueprint("nodes", "/", version="v1")
 utilsbp = Blueprint("utils", "/", version="v1")
 explorerbp = Blueprint("explorer", "/", version="v1")
+
+@auth.route("/auth", methods=["POST"])
+@arg.parser(arg.AuthArguments)
+async def authenticate(request: Request, arguments: arg.AuthArguments) -> HTTPResponse:
+    auth: Authenticator | None = getattr(request.app.ctx, "auth", None)
+    if auth is None:
+        raise ValueError("Authentication is not set.")
+
+    try:
+        token = auth.authenticate(arguments.username, arguments.password)
+    except Exception as e:
+        if arguments.redirect:
+            return redirect(f"/v1/login?message={e}&level=error")
+        else:
+            raise e
+
+    data = {"token": token, "max_age": auth.MAX_AGE, "cookie": arguments.set_cookie}
+    response =  json({"status_code": 200, "reasons": "OK", "data": data})
+
+    if arguments.set_cookie:
+        response.add_cookie(
+            "Authorization",
+            f"Bearer {token}",
+            httponly=True,
+            samesite="Strict",
+            max_age=auth.MAX_AGE,
+        )
+    return response
+
+@auth.route("login", methods=["GET"])
+@arg.parser(arg.LoginArguments)
+async def login(request: Request, arguments: arg.LoginArguments) -> HTTPResponse:
+    notif = generate_notification_payload(arguments.message, arguments.level)
+    return await render("login.html", context={"notifications": notif})
 
 @nodesbp.route("trees/<tree_name:str>/search", methods=["GET"])
 @arg.parser(arg.NodesArguments)
@@ -67,12 +107,12 @@ async def root(request: Request, arguments: arg.RootArguments) -> JSONResponse:
     root = engine.root(arguments.fields)
     return json({"status_code": 200, "reasons": "OK", "data": root})
 
-@nodesbp.route("trees/<tree_name:str>/nodes", methods=["GET"])
+@nodesbp.route("trees/<tree_name:str>/nodes", methods=["GET", "POST"])
 @arg.parser(arg.NodesArguments)
 async def nodes(request: Request, arguments: arg.NodesArguments) -> JSONResponse:
     engine: TreeEngine = get_engine(request, arguments)
     if arguments.q is not None:
-        data = engine.nodes_where(arguments.q, arguments.fields)
+        data = engine.nodes_where(arguments.q, arguments.fields, arguments.page, arguments.page_size)
     else:
         data = engine._non_ordered_walk(arguments.fields, arguments.page, arguments.page_size)
     return json({"status_code": 200, "reasons": "OK", "data": data})
@@ -166,7 +206,6 @@ async def fields(request: Request, arguments: arg.Fieldrguments):
         distinct = "?distinct"
     return redirect(f"fields/{arguments.field_name}{distinct}")
 
-
 @utilsbp.route("trees/<tree_name:str>/fields/<field_name:str>", methods=["GET"])
 @arg.parser(arg.Fieldrguments)
 async def get_field(request: Request, arguments: arg.Fieldrguments) -> JSONResponse:
@@ -174,14 +213,20 @@ async def get_field(request: Request, arguments: arg.Fieldrguments) -> JSONRespo
     data = engine._field(arguments.field_name, arguments.distinct)
     return json({"status_code": 200, "reasons": "OK", "data": data})
 
-
-
 @explorerbp.route("trees/<tree_name:str>/explorer", methods=["GET"])
-@arg.parser(arg.Fieldrguments)
-async def explorer(request: Request, arguments: arg.Fieldrguments) -> JSONResponse:
+@arg.parser(arg.ExplorerArguments)
+async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPResponse:
     engine: TreeEngine = get_engine(request, arguments)
-    """return html explorer page"""
-    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+    context = {
+        "tree": arguments.tree_name,
+        "page": arguments.page,
+        "page_size": arguments.page_size,
+        "fields": engine._topology.columns.keys() + [f for f in engine._metadata.columns.keys() if f != "id"],
+        "operators": list(OP.keys())
+    }
+    return await render("explorer.html", context= context)
+
 
 
 

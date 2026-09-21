@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from math import e
 import re
 import inspect
 from abc import ABC
@@ -65,6 +64,16 @@ def bool_converter(value: Any) -> Any:
         raise ValueError(f"Unable to convert {value} into boolean.")
 
     return False
+
+def str_or_none(instance: Type, attribute: Attribute, value: Any):
+    if not isinstance(value, str) and value is not None:
+        raise ValueError(f"Argument {attribute} is not of type[str|None]")
+
+
+def int_or_none(instance: Type, attribute: Attribute, value: Any):
+    if not isinstance(value, int) and value is not None:
+        raise ValueError(f"Argument {attribute} is not of type[int|None]")
+
 
 def validate_list_or_none(instance: Type, attribute: Attribute, value: Any):
     if value is None:
@@ -164,3 +173,51 @@ class DrawArguments(ArgumentParser):
     subtree: str | None = field(default=None)
     style: str = field(default="ascii")
     extra_spacing: bool = field(default=False)
+
+
+@define
+class ExplorerArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    page: int = field(default=0, converter=int_converter, validator=validators.instance_of(int))
+    page_size: int = field(default=100, converter=int_converter, validator=validators.instance_of(int))
+    conditions: list | None = field(default=None)
+
+
+@define
+class LoginArguments(ArgumentParser):
+    message: str | None = field(default=None, validator=str_or_none)
+    level: str | None = field(default=None, validator=str_or_none)
+
+
+
+@define
+class AuthArguments(ArgumentParser):
+    username: str = field(validator=validators.instance_of(str))
+    password: str = field(validator=validators.instance_of(str))
+    set_cookie: bool = field(default=False, converter=bool_converter, validator=validators.instance_of(bool))
+    redirect: bool = field(default=False, converter=bool_converter, validator=validators.instance_of(bool))
+    message: str | None = field(default=None, validator=str_or_none)
+    level: str | None = field(default=None, validator=str_or_none)
+
+    @classmethod
+    def from_request(cls, request: Request) -> ArgumentParser:
+        if "application/x-www-form-urlencoded" in request.content_type:
+            url_args = {k: (unquote(v) if isinstance(v, str) else v) for k, v in request.match_info.items()} or {}
+            query_args = {k.replace("-", "_"): v for k, v in request.get_query_args(keep_blank_values=True)} or {}
+            form = request.form
+            assert form is not None
+            payload = {k:v[0] for k,v in form.items()}
+            params: dict[str, Any] = dict(ChainMap(payload, url_args, query_args))
+        else:
+            url_args = {k: (unquote(v) if isinstance(v, str) else v) for k, v in request.match_info.items()} or {}
+            query_args = {k.replace("-", "_"): v for k, v in request.get_query_args(keep_blank_values=True)} or {}
+            payload = request.json or {}
+            params: dict[str, Any] = dict(ChainMap(payload, url_args, query_args))
+
+        c = params.get("set_cookie", False)
+        if c == "set_cookie":
+            params["set_cookie"] = True
+        c = params.get("redirect", False)
+        if c == "redirect":
+            params["redirect"] = True
+        return cls(**params)

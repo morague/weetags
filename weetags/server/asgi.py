@@ -1,6 +1,4 @@
 from weetags.server.main import Weetags
 
-
-weetags = Weetags("trees")
-
+weetags = Weetags.create_app("./server.yml")
 app = weetags()

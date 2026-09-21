@@ -14,27 +14,34 @@ from weetags.common.loaders import ConfigLoader, YamlLoader, Loader
 from weetags.common.configs import TreeConfig
 import weetags.server.listeners as lstn
 import weetags.server.middlewares as mdlw
-from weetags.server.routes import weetagsbp, nodesbp, utilsbp
+from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp
+from weetags.server.authentication import Authenticator, EngineURI
 
 class Weetags:
     app: Sanic
 
     def __init__(
         self, 
-        tree_files: str | Path, 
+        trees: str | Path, 
+        authenticator: Authenticator | None = None,
         configs: dict[str, Any] | None = None, 
         logging_configs: dict[str, Any] | None = None
     ) -> None:
         self.app = Sanic("weetags", log_config=self.logging(logging_configs))
-        self.app.config.TREES_CONFIGS = self.tree_configs(tree_files)
+        self.app.config.TREES_CONFIGS = self.tree_configs(trees)
+        self.app.config.TEMPLATING_ENABLE_ASYNC = True
+        self.app.config.TEMPLATING_PATH_TO_TEMPLATES = "weetags/server/templates/"
 
-        self.app.ext.openapi
+        if authenticator is not None:
+            self.app.ctx.auth = authenticator
 
         self.update_configs(configs)
         
-        self.app.static("/static", file_or_directory="weetags/server/static")
+        self.app.static("/static", file_or_directory="./weetags/server/static", directory_view=True)
         self.app.blueprint(nodesbp)
         self.app.blueprint(utilsbp)
+        self.app.blueprint(auth)
+        self.app.blueprint(explorerbp)
         self.app.on_request(mdlw.go_fast, priority=10)
         self.app.on_request(mdlw.authorize, priority=9)
         self.app.on_response(mdlw.log_exit, priority=10)
@@ -43,6 +50,7 @@ class Weetags:
         self.app.main_process_start(lstn.states, priority=0)
         self.app.after_server_start(lstn.build, priority=10)
         self.app.after_server_start(lstn.load_trees, priority=9)
+
 
     def __call__(self, *args: Any, **kwds: Any) -> Sanic:
         return self.app
@@ -60,12 +68,25 @@ class Weetags:
 
     @classmethod
     def from_configs(cls, configs: dict[str, Any]) -> Weetags:
-        ...
+        trees = configs.get("trees", None)
+        if trees is None:
+            raise ValueError("Define trees.")
+        
+        auth_configs = configs.get("auth")
+        auth = None
+        if auth_configs is not None:
+            auth = Authenticator.from_configs(auth_configs)
 
+        logging = configs.get("logging", None)
+        app_configs = configs.get("configs", None)
+        return cls(trees, auth, app_configs, logging)
+
+            
     def extend(self) -> None:
         ...
 
     def tree_configs(self, file_or_folder: str | Path, loader: Type[Loader] = YamlLoader) -> dict[str, Any]:
+        print(file_or_folder)
         path = Path(file_or_folder)
 
         if path.is_dir():

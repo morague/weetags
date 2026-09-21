@@ -1,0 +1,46 @@
+{% macro notification(level, message) -%}
+    {% if level == "error" %}
+        {% set color = "is-danger" %}
+    {% elif section == "warning" %}
+        {% set color = "is-warning" %}
+    {% elif section == "info" %}
+        {% set color = "is-info" %}
+    {% else %}
+        {% set color = "is-danger" %}
+    {% endif %}
+
+    <div class="notification is-light {{ color }}">
+        <button class="delete" onclick="close_notification(event)"></button>
+        <p>{{ message }}</p>
+    </div>
+{%- endmacro %}
+
+{% macro dropdown(data) -%}
+    <div class="dropdown {{ data.level }}" onclick="open_dropdown(this)">
+        <div class="dropdown-trigger">
+            <button class="button" aria-haspopup="true" aria-controls="dropdown-menu2">
+                <span>{{ data.label }}</span>
+                <span class="icon is-small">
+                    <ion-icon name="caret-down-outline"></ion-icon>
+                </span>
+            </button>
+        </div>
+        <div class="dropdown-menu" id="dropdown-menu2" role="menu">
+            <div class="dropdown-content">
+                {% for r in data.records %}
+                    <div class="notification {{ data.level }} dropdown-item has-text-centered"><strong>{{ r.value }}</strong></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{%- endmacro %}
+
+{% macro alert(level, message) -%}
+    <div class="notification {{ level }}"><p><strong>{{ message }}</strong></p></div>
+{%- endmacro %}
+
+{% macro alerts(messages) -%}
+    {% for r in messages %}
+        <div class="notification {{ r.level }}"><p><strong>{{ r.message }}</strong></p></div>
+    {% endfor %}
+{%- endmacro %}

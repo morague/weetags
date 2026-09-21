@@ -154,10 +154,18 @@ class TreeEngine(BoundEngine):
     def node(self, name: str) -> dict[str, Any] | None:
         return self._node(name)
 
-    def nodes_where(self, conditions: list, fields: list[str] | None = None) -> list[dict[str, Any]]:
+    def nodes_where(self, conditions: list, fields: list[str] | None = None, page: int = 0, page_size: int = 10) -> list[dict[str, Any]]:
         if fields is None:
             fields = []
-        stmt = QueryBuilder(self.tree, self.metadata).select().fields_from_str(*fields).where_from_str(conditions).order_by(self.tree.c.path)
+        stmt = (
+            QueryBuilder(self.tree, self.metadata)
+            .select()
+            .fields_from_str(*fields)
+            .where_from_str(conditions)
+            .offset(page * page_size)
+            .limit(page_size)
+            .order_by(self.tree.c.path)
+        )
         return self._serialize_records(stmt())
 
     @tree_topology_cache("parent")

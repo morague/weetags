@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 from time import perf_counter
 from sanic import Request, HTTPResponse, json
+
+from weetags.server.authentication import Authenticator
+from weetags.server.routes import authenticate
 
 logger = logging.getLogger("access")
 
@@ -14,7 +18,17 @@ async def go_fast(request: Request) -> None:
     request.ctx.t = perf_counter()
 
 async def authorize(request: Request) -> None:
-    print(request.path)
+    jwt = request.cookies.get("Authorization", None)
+    if jwt is not None:
+        request.headers.add("Authorization", jwt)
+
+    if request.app.ctx.auth is not None and request.route is not None:
+        auth: Authenticator = request.app.ctx.auth
+        blueprint = request.route.name.split('.')[1]
+        authorized = auth.authorize(blueprint, request.method, request.path, request.token)
+        if authorized is False:
+            raise ValueError("Unauthorized") # 401
+        
 
 async def log_exit(request: Request, response: HTTPResponse) -> None:
     perf, size = None, None

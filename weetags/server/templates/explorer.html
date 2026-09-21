@@ -1,0 +1,223 @@
+{% extends "index.html" %}
+
+{% block head %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+    <link rel="stylesheet" href="/static/css/main.css"/>
+    <title>Weetags | {{tree|capitalize}} explorer</title>
+{% endblock %}
+
+{% block main %}
+    <style>    
+        input[type="checkbox"] {
+           appearance: none;
+        }
+
+        input[type="text"] {
+            background: transparent;
+            border: none;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+        }
+
+        select {
+            background: transparent;
+            border: none;
+        }
+
+        .fname:hover {
+            cursor: pointer;
+        }
+
+        .filter {
+            margin: 5px;
+        }
+
+        .filter-fname, .filter-value {
+            max-width: 100px;
+        }
+
+        .filter-op {
+            max-width: 50px;
+        }
+
+        .filter-fname:hover, .filter-op:hover, .is-delete:hover {
+            cursor: pointer;
+        }
+
+        .uline {
+            text-decoration: underline;
+            text-decoration-thickness: 4px;
+        }
+
+        .result {
+            background-color: var(--bulma-primary-95);
+            transition: background-color 0.3s;
+        }
+
+        .result:hover {
+            background-color: var(--bulma-primary-light);
+        }
+
+        .kv {
+            margin: 5px; 
+            border-radius: 15px;
+            padding: 6px;
+            background-color: var(--bulma-primary);
+            transition: background-color 0.3s;
+        }
+
+        .kv:hover {
+            cursor: pointer;
+            background-color: var(--bulma-primary-80);
+        }
+
+        .k {
+            margin-right: 5px; 
+            padding-right: 3px; 
+            border-right: 2px solid var(--bulma-primary-dark);
+        }
+
+        .v {
+            max-width: 300px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis;
+        }
+
+        .placeholder {
+            background-color: var(--bulma-primary-light);
+            transition: background-color 0.3s;
+        }
+
+        .popup {
+            min-width: 25%; 
+            max-width: 50%;
+            max-height: 75%;
+            overflow-y: scroll;
+            display: none; 
+            z-index: 999; 
+            top: 10px; 
+            right: 10px; 
+            position: fixed;
+        }
+
+        .loader-box {
+            margin: auto 0;  
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+        }
+
+        .loader {
+            border-radius: 0;
+            border: none;
+            width: 45px;
+            height: 45px;
+            aspect-ratio: 1;
+            --c: no-repeat linear-gradient(var(--bulma-primary-light) calc(50% - 10px),#0000 0 calc(50% + 10px),var(--bulma-primary-light) 0);
+            background: 
+                var(--c) 0%   100%,
+                var(--c) 50%  100%,
+                var(--c) 100% 100%;
+            background-size: 20% calc(200% + 20px);
+            animation:l4 1s infinite linear;
+        }
+        @keyframes l4 {
+            33%  {background-position: 0% 50%,50% 100%,100% 100%}
+            50%  {background-position: 0%  0%,50%  50%,100% 100%}
+            66%  {background-position: 0%  0%,50%   0%,100%  50%}
+            100% {background-position: 0%  0%,50%   0%,100%   0%}
+        }
+
+
+    </style>
+
+
+
+    <div id="popup" class="popup notification is-primary is-light">
+        <div style="border-bottom: 4px solid var(--bulma-primary); margin-bottom: 10px;"><strong class="key"></strong></div>
+        <div class="content"></div>
+    </div>
+
+
+    <div class="column is-8 is-offset-2 mt-6 mb-6">
+
+        <h2 class="title is-2 mb-6">{{tree|capitalize}} explorer</h2>
+
+
+
+        <nav class="level m-3">
+            <div class="level-left">
+                <div class="level-item">
+                    <button class="button is-primary">Fields</button>
+                </div>
+                <div class="level-item">
+                    <button class="button is-primary" onclick="add_filter()">Add Filter</button>
+                </div>
+            </div>
+
+            <div class="level-right">
+                <div class="level-item">
+                    <button class="button is-primary" onclick="search('{{tree}}')">Search</button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="mt-6 mb-6">
+            <div id="filters" class="filters columns is-multiline"></div>
+            <div id="fields" class="tags are-medium mt-3">
+                {% for f in fields %}
+                    <span class="fname tag is-primary is-hoverable" name="{{f}}"><input type="checkbox" checked><strong>{{f}}</strong></span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div>
+            <div class="columns is-vcentered">
+                <div class="column is-4"><strong>Name</strong></div>
+                <div class="column is-8"><strong>Data</strong></div>
+            </div>
+
+
+            <div id="results" page="0", page_size="10">
+                <div class="box placeholder">
+                    <div class="columns">
+                        <div class="column has-text-centered"><strong>No results</strong></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <nav class="pagination is-centered" role="navigation" aria-label="pagination" style="margin-top: 10px;">
+            <a class="button pagination-previous" onclick="previous_page('{{tree}}')" style="background-color: var(--bulma-primary-light);">Previous Page</a>
+            <a class="button pagination-next" onclick="next_page('{{tree}}')" style="background-color: var(--bulma-primary-light);">Next page</a>
+            <ul class="pagination-list">
+                <li><a id="current-page" class="pagination-link" style="background-color: var(--bulma-primary-light); color: black;">{{page}}</a></li>
+            </ul>
+        </nav>
+
+        <div class="field is-grouped is-grouped-right">
+            <div name="page_size" class="select is-primary">
+                <select onchange="change_page_size(this)">
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="75">75</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+
+    </div>
+    <script>
+        let fields = JSON.parse('{{fields|tojson}}');
+        let operators = JSON.parse('{{operators|tojson}}');
+    </script>
+    <script type="text/javascript" src="/static/js/explorer.js"></script>
+
+{% endblock %}

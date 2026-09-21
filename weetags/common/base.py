@@ -33,28 +33,19 @@ class TreeUsers(object):
     def __init__(self) -> None:
         self.columns = TreeUsers.columns
 
-class TreePermissions(object):
+class TreeRules(object):
     columns = [
         Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("priority", Integer, nullable=False),
         Column("type", Text, nullable=False),
         Column("method", Text, nullable=False),
-        Column("path", Text, nullable=True),
-        Column("role", Text, nullable=False),
-        Column("priority", Integer, nullable=False),
+        Column("rule", Text, nullable=True),
+        Column("role", Text, nullable=True)
     ]
 
     def __init__(self) -> None:
-        self.columns = TreePermissions.columns
+        self.columns = TreeRules.columns
 
-# class TreeRules(object):
-#     columns = [
-#         Column("rule_id", Integer, primary_key=True, autoincrement=True),
-#         Column("path", Text, nullable=False),
-#         Column("role", Text, nullable=False),
-#     ]
-
-#     def __init__(self) -> None:
-#         self.columns = TreeRules.columns
 
 
 class TreeTopologyDefinition(object):
