@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from logging.config import valid_ident
-from platform import node
-from typing import Any, Literal
-
-from sqlalchemy import desc
+import hashlib
+from typing import Any, Literal, Callable
 
 from weetags.common import BoundEngine
 from weetags.common.path_utils import NodePath, NodePathCollection
@@ -36,25 +33,41 @@ class TreeCache:
         self._engine = engine
         self.build()
         return self
+    
+    def query_key(self, signature: str) -> str:
+        return f"query_{self.tree_name}_{signature}"
+
+    def reference_key(self, name: str) -> str:
+        return f"node_{self.tree_name}_{name}"
 
     def set(self, key: str, value: Any) -> None:
         self.cache_engine.set(key, value)
 
-    def set_node_reference(self, name: str, values: list[str]) -> None:
-        self.set(f"node_{self.tree_name}_{name}", values)
-
-
     def get(self, key: str, default: Any = None) -> Any:
         return self.cache_engine.get(key, default)
 
+    def pop(self, key: str) -> None:
+        self.cache_engine.pop(key)
+
+    def set_node_reference(self, name: str, values: list[str]) -> None:
+        self.set(self.reference_key(name), values)
+
+    def set_query_result(self, signature: str,  values: Any) -> None:
+        self.set(self.query_key(signature), values)
+
+    def get_cached_result(self, signature: str) -> Any:
+        value = self.get(self.query_key(signature))
+        return value
+
+    def check_cached_result_key(self, signature: str) -> bool:
+        return self.cache_engine.check(self.query_key(signature))
+
     def get_node_reference(self, name: str) -> list[str]:
-        paths = self.get(f"node_{self.tree_name}_{name}")
+        paths = self.get(self.reference_key(name))
         if paths is None:
             raise KeyError(f"Unknown node name: {name}")
         return paths
 
-    def pop(self, key: str) -> None:
-        self.cache_engine.pop(key)
 
     def flush(self) -> None:
         ...

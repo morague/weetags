@@ -24,8 +24,23 @@ from weetags.tree.traversal import (
 )
 from weetags.tree.importer import Importer
 
+def query_cache(f):
+    @wraps(f)
+    def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
+        if instance.cache is not None:
+            signature = cutils.Signature(f, args, kwargs).sha1_digest
+            check = instance.cache.check_cached_result_key(signature)
+            if check:
+                return instance.cache.get_cached_result(signature)
 
-def tree_topology_cache(relation: Relation):
+            result = f(instance, *args, **kwargs)
+            instance.cache.set_query_result(signature, result)
+            return result
+        else:
+            return f(instance, *args, **kwargs)
+    return wrapper
+
+def topology_cache(relation: Relation):
     def inner(f):
         @wraps(f)
         def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
@@ -53,7 +68,6 @@ def tree_topology_cache(relation: Relation):
                             fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case _:
                             raise NotImplementedError()
-                    print(nodes, fields)
                 except Exception as e:
                     return f(instance, *args, **kwargs)    
 
@@ -122,33 +136,40 @@ class TreeEngine(BoundEngine):
         return self
 
     # TREE PROPERTIES
+    @query_cache
     def tree_size(self) -> int:
         stmt = select(func.count(self.tree.c.id))
         return self._serialize_value(stmt)
 
+    @query_cache
     def tree_degree(self) -> int:
         stmt = select(func.max(func.json_array_length(self.tree.c.children)))
         return self._serialize_value(stmt)
 
+    @query_cache
     def leaves(self) -> list[dict[str, Any]]:
         stmt = select(self.tree).where(func.json_array_length(self.tree.c.children) == 0)
         return self._serialize_records(stmt)
 
+    @query_cache
     def breadth(self) -> int:
         stmt = select(func.count(self.tree.c.id)).where(func.json_array_length(self.tree.c.children) == 0)
         return self._serialize_value(stmt)
 
+    @query_cache
     def tree_depth(self) -> int:
         stmt = select(func.max(self.tree.c.level))
         return self._serialize_value(stmt)
 
+    @query_cache
     def width(self, level: int) -> int:
         if level > self.tree_depth():
             raise ValueError("Tree depth is lower than level.")
 
         stmt = select(func.count(self.tree.c.id)).where(self.tree.c.level == level)
         return self._serialize_value(stmt)
-        
+
+    @query_cache
     def root(self, fields: list[str] | None = None) -> dict[str, Any]:
         stmt = select(*self._get_selected(fields)).where(self.tree.c.parent == None)
         data = self._serialize_records(stmt)
@@ -162,9 +183,11 @@ class TreeEngine(BoundEngine):
         return len(self.roots(self.name))
 
     # TREE PARTS ENUMERATION
-    def node(self, name: str) -> dict[str, Any] | None:
+    @query_cache
+    def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         return self._node(name)
 
+    @query_cache
     def nodes_where(self, conditions: list, fields: list[str] | None = None, page: int = 0, page_size: int = 10) -> list[dict[str, Any]]:
         if fields is None:
             fields = []
@@ -179,7 +202,8 @@ class TreeEngine(BoundEngine):
         )
         return self._serialize_records(stmt())
 
-    @tree_topology_cache("parent")
+    @query_cache
+    @topology_cache("parent")
     def parent_node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         node = self._node_or_raise(name, fields)        
         parent_name = node.get("parent", None)
@@ -187,12 +211,15 @@ class TreeEngine(BoundEngine):
             return None
         return self._node(parent_name)
 
-    @tree_topology_cache("children")
+    @query_cache
+    @topology_cache("children")
     def children_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         node = self._node_or_raise(name)
         children_names = node.get("children",  [])
         return self._nodes(*children_names, fields=fields)
 
+    @query_cache
+    @topology_cache("siblings")
     def sibling_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         parent = self.parent_node(name)
         if parent is None:
@@ -205,7 +232,8 @@ class TreeEngine(BoundEngine):
             siblings = [n for n in siblings if n != name]
         return self._nodes(*siblings, fields= fields)
 
-    @tree_topology_cache("descendants")
+    @query_cache
+    @topology_cache("descendants")
     def descendant_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         descendants = NodePathCollection(*paths).descendants_of(name)
@@ -213,7 +241,8 @@ class TreeEngine(BoundEngine):
             descendants.insert(0, name)
         return self._nodes(*descendants, fields= fields)
 
-    @tree_topology_cache("ancestors")
+    @query_cache
+    @topology_cache("ancestors")
     def ancestor_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         ancestors = NodePathCollection(*paths).ancestors_of(name)
@@ -221,12 +250,14 @@ class TreeEngine(BoundEngine):
             ancestors.append(name)
         return self._nodes(*ancestors, fields= fields)
 
-    @tree_topology_cache("branch")
+    @query_cache
+    @topology_cache("branch")
     def branch_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         branch = NodePathCollection(*paths).branch_of(name)
         return self._nodes(*branch, fields= fields)
 
+    @query_cache
     def lowest_common_ancestor(self, name: str, other_name: str, fields: list[str] | None = None) -> dict[str, Any]:
         node = self._node_or_raise(name)
         other = self._node_or_raise(other_name)
@@ -240,6 +271,7 @@ class TreeEngine(BoundEngine):
         raise KeyError("Unable to find a common ancestor")
 
 
+    @query_cache
     def distance(self, name: str, other_name: str) -> int:
         node = self._node_or_raise(name)
         other = self._node_or_raise(other_name)

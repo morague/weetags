@@ -26,6 +26,10 @@ class CacheEngine(ABC):
     @abstractmethod
     def pop(self, key: str) -> None:
         raise NotImplementedError()
+
+    @abstractmethod
+    def check(self, key: str) -> bool:
+        raise NotImplementedError()
     
 
 class LocalCacheEngine(CacheEngine):
@@ -47,6 +51,9 @@ class LocalCacheEngine(CacheEngine):
     def pop(self, key: str) -> Any:
         self.cache.pop(key)
 
+    def check(self, key: str) -> bool:
+        return key in self.cache.keys()
+
 class MemcachedCacheEngine(CacheEngine):
     client: PooledClient
 
@@ -65,3 +72,10 @@ class MemcachedCacheEngine(CacheEngine):
 
     def pop(self, key: str) -> Any:
         self.client.delete(key)
+
+    def check(self, key: str) -> bool:
+        check = True
+        res = self.get(key, "no")
+        if res == "no":
+            check = False
+        return False

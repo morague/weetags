@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+
+import json
+import hashlib
 from pathlib import Path
 from sqlalchemy import Table
+from datetime import datetime
+from attrs import define, field
 
-from typing import Type, Any
-
+from typing import Any, Callable, Type
 
 OP = {
     "=": "__eq__",
@@ -116,3 +120,25 @@ def get_argument(source: tuple[tuple, dict],  name: str, index: int) -> Any:
         value = args[index]
     return value
 
+@define(frozen=True)
+class Signature:
+    callable: Callable = field()
+    args: tuple[Any] = field()
+    kwargs: dict[str, Any] = field()
+
+    @property
+    def sha1_digest(self) -> str:
+        args = json.dumps([self._serialize(v) for v in self.args])
+        kwargs = json.dumps({k:self._serialize(v) for k,v in self.kwargs.items()})
+        name = self.callable.__name__
+        return hashlib.sha1(f"{name}_{args}_{kwargs}".encode()).hexdigest()
+
+    def _serialize(self, value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        elif isinstance(value, (list, tuple)):
+            return [self._serialize(v) for v in value]
+        elif isinstance(value, dict):
+            return {k:self._serialize(v) for k,v in value.items()}
+        else:
+            return value
