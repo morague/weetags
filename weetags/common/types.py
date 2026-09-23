@@ -6,7 +6,7 @@ type TreeTypes = Literal["tree", "forest"]
 type AcceptedFieldType = Literal["integer", "text", "bool", "json", "datetime"]
 
 type BaseRelations = Literal["parent", "children", "siblings", "ancestors", "descendants", "branchs"] 
-type Relation = Literal["parent", "children", "siblings", "ancestors", "descendants", "branchs", "distance", "closest_ancestor"]
+type Relation = Literal["parent", "children", "siblings", "ancestors", "descendants", "branch", "distance", "closest_ancestor"]
 type TraversalOrder = Literal["pre", "in", "post", "level"]
 type DrawStyle = Literal["ascii", "ascii-ex", "ascii-exr", "ascii-em", "ascii-emv", "ascii-emh"]
 

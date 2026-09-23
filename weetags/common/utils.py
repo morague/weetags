@@ -107,3 +107,12 @@ def require_sqlite_version() -> bool:
             raise ValueError("Unique constraint manipulation after tree creation is only available for psql dialect.")
     """
     return True
+
+def get_argument(source: tuple[tuple, dict],  name: str, index: int) -> Any:
+    args, kwargs = source
+
+    value = kwargs.get(name, None)
+    if value is None and len(args) >= index + 1:
+        value = args[index]
+    return value
+

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from sqlalchemy import desc
 
 from weetags.common import BoundEngine
-from weetags.common.path_utils import NodePath
+from weetags.common.path_utils import NodePath, NodePathCollection
 from weetags.common.cache import (
     CacheEngine, 
     LocalCacheEngine, 
@@ -34,193 +34,87 @@ class TreeCache:
     def bind(self, tree_name: str, engine: BoundEngine) -> TreeCache:
         self.tree_name = tree_name
         self._engine = engine
-        self.reflect()
+        self.build()
         return self
-
-    def reflect(self) -> None:
-        self._engine.bind(self.tree_name)
-        self._set_topology()
-        self._set_references()
-
-    def _set_topology(self) -> None:
-        roots = self._engine.roots(self.tree_name)
-        if len(roots) > 1:
-            raise ValueError("too many roots")
-        if len(roots) == 0:
-            raise ValueError("No root node found")
-        root = roots[0]
-        topology = self._engine.subtree_topology(root["name"])
-        self.set(f"{self.tree_name}_topology", topology)
-
-    def _set_references(self) -> None:
-        references = {
-            n["name"]:type("N", (), {"id": n["id"], "name": n["name"], "path": n["path"]}) 
-            for n in self._engine.non_ordered_walk()
-        }
-        self.set(f"{self.tree_name}_references", references)
-
 
     def set(self, key: str, value: Any) -> None:
         self.cache_engine.set(key, value)
 
+    def set_node_reference(self, name: str, values: list[str]) -> None:
+        self.set(f"node_{self.tree_name}_{name}", values)
+
+
     def get(self, key: str, default: Any = None) -> Any:
         return self.cache_engine.get(key, default)
+
+    def get_node_reference(self, name: str) -> list[str]:
+        paths = self.get(f"node_{self.tree_name}_{name}")
+        if paths is None:
+            raise KeyError(f"Unknown node name: {name}")
+        return paths
 
     def pop(self, key: str) -> None:
         self.cache_engine.pop(key)
 
-    """
-    1. translate node relation expr > list[nid]
-        main cache tactics is to translate tree relation queries into a list of ids. 
-        nodes get topologically ordered at query. 
+    def flush(self) -> None:
+        ...
 
-    2. temp store particallar node conditionnal queries.
+    def build(self) -> None:
+        paths = NodePathCollection.from_generator(self._engine.non_ordered_walk())
+        references = paths.node_references()
+        for name, paths in references.items():
+            self.set_node_reference(name, paths)
 
 
-
-
-    topology based node retrival
-    1. topology lookup
-        retrieve list of branch containing node name.
-    2. realise operation on branch path to retrieve nodes of interest.
-    3. use path for reference retrieval, look up and collect nids
-    4. return nids
-    """
-
-    def siblings_ids(self, name: str, include_self: bool = False, *args, **kwargs) -> list[int]:
-        """siblings possess the same parent. can be done either via path or by traversal ???"""
-        parent = self.get_parent(name)
-        if parent is None:
-            raise ValueError("Parent not found")
+    def siblings(self, name: str, include_self: bool = False, *args, **kwargs) -> list[str]:
+        p = self.parent(name)
+        if len(p) <= 1:
+            return []
+        parent = p[0]
         
-        candidates = self.topological_search(parent)
-        references = self.cache_engine.get(f"{self.tree_name}_references")
+        siblings = self.children(parent)
+        if include_self is False:
+            index = siblings.index(name)
+            siblings.pop(index)
+        return siblings
 
-        nodes, visited = [], []
-        for path in candidates:
-            node = path.get_node_after(parent, 1)
-            if node is None:
-                continue
-            if node in visited:
-                continue
-
-            child = references.get(node)
-            if child is None:
-                raise KeyError(f"Unknown node name: {child}")
-            nodes.append(child)
-            
-        return [n.id for n in nodes]
-
-
-    def parent_id(self, name: str, *args, **kwargs) -> int:
-        candidates = self.topological_search(name)
-        if len(candidates) == 0:
-            raise ValueError()
-
-        references = self.cache_engine.get(f"{self.tree_name}_references")
-        parent = candidates[0].get_node_before(name, 1)
-        if parent is None:
-            raise ValueError("no parent") # delegate to the tree engine to return None... improvable then
-
-        parent = references.get(parent)
-        return parent.id
-
-    def children_ids(self, name: str, *args, **kwargs) -> list[int]:
-        candidates = self.topological_search(name)
-        references = self.cache_engine.get(f"{self.tree_name}_references")
-
-        nodes, visited = [], []
-        for path in candidates:
-            node = path.get_node_after(name, 1)
-            if node is None:
-                continue
-            if node in visited:
+    def children(self, name: str, *args, **kwargs) -> list[str]:
+        children = set()
+        paths = self.get_node_reference(name)
+        for p in paths:
+            path = NodePath(NodePath(p).subpath(name, node_is="root"))
+            if len(path.nodes) == 1:
                 continue
 
-            child = references.get(node)
-            if child is None:
-                raise KeyError(f"Unknown node name: {child}")
-            nodes.append(child)
-        return [n.id for n in nodes]
+            child = path.nodes[1]
+            children.add(child)
+        return list(children)
 
-    def ancestor_ids(self, name: str, *args, **kwargs) -> list[int]:
-        candidates = self.topological_search(name)
-        references = self.cache_engine.get(f"{self.tree_name}_references")
+    def parent(self, name: str, *args, **kwargs) -> list[str]:
+        paths = self.get_node_reference(name)
+        nodes = NodePath(paths[0]).subpath(name, node_is="leaf").split(".")
+        if len(nodes) <= 1:
+            return []
+        return [nodes[-2]]
 
-        visited, ancestors = [], []
-        for path in candidates:
-            for node in path.iter_until(name):
-                if node in visited:
-                    continue
-                ancestor = references.get(node)
-                if ancestor is None:
-                    raise KeyError(f"Unknown node name: {node}")
-                visited.append(node)
-                ancestors.append(ancestor)
-        return [n.id for n in ancestors]
+    def ancestors(self, name: str, include_self: bool = False, *args, **kwargs) -> list[str]:
+        paths = self.get_node_reference(name)
+        ancestors = NodePath(paths[0]).subpath(name, node_is="leaf").split(".")
+        if include_self is False:
+            ancestors.pop()
+        return ancestors
 
-    def descendant_ids(self, name: str, *args, **kwargs) -> list[int]:
-        candidates = self.topological_search(name)
-        references = self.cache_engine.get(f"{self.tree_name}_references")
+    def descendants(self, name: str, include_self: bool = False, *args, **kwargs) -> list[str]:
+        descendants = set()
+        paths = self.get_node_reference(name)
+        for p in paths:
+            nodes = NodePath(NodePath(p).subpath(name, node_is="root")).nodes
+            if include_self is False:
+                nodes.pop(0)
+            descendants.update(nodes)
+        return list(descendants)
 
-        visited, descendants = [], []
-        for path in candidates:
-            for node in path.iter_after(name):
-                if node in visited:
-                    continue
-                descendant = references.get(node)
-                if descendant is None:
-                    raise KeyError(f"Unknown node name: {node}")
-                visited.append(node)
-                descendants.append(descendant)
-        return [n.id for n in descendants]
-
-    def branch_ids(self, name: str, *args, **kwargs) -> list[int]:
-        candidates = self.topological_search(name)
-        references = self.cache_engine.get(f"{self.tree_name}_references")
-
-        visited, nodes = [], []
-        for path in candidates:
-            for node in path.iter():
-                if node in visited:
-                    continue
-                data = references.get(node)
-                if data is None:
-                    raise KeyError(f"Unknown node name: {node}")
-                visited.append(node)
-                nodes.append(data)
-        return [n.id for n in nodes]
-
-    def distance(self) -> int:
-        ...
-
-    def closest_common_ancestor(self) -> int:
-        ...
-
-    def topological_search(self, name: str) -> list[NodePath]:
-        paths, prefix = [], None
-
-        topology = self.cache_engine.get(f"{self.tree_name}_topology")
-        for path in topology:
-            p = NodePath(path)
-            if p.contains_node(name):
-                paths.append(p)
-                if prefix is None and p.len > 1:
-                    prefix = p.rstrip_from_node(name, include_seperator=True)
-                if p.len == 1:
-                    break
-            if prefix is not None and p.contains_subpath(prefix) is False:
-                break
-        return paths
-
-    def get_parent(self, name) -> str | None:
-        topology = self.cache_engine.get(f"{self.tree_name}_topology")
-        for branch in topology:
-            p = NodePath(branch)
-            if p.contains_node(name):
-                parent = p.get_node_before(name, 1)
-
-                if parent is None:
-                    raise ValueError(f"parent not found.")
-                return parent
-        return None
+    def branch(self, name: str, *args, **kwargs) -> list[str]:
+        ancestors = self.ancestors(name, include_self=True)
+        descendants = self.descendants(name)
+        return ancestors + descendants

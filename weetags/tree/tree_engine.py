@@ -14,6 +14,7 @@ from typing import Any, Generator, Type
 from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
+import weetags.common.utils as cutils
 import weetags.common.serializer as serializers
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
@@ -32,24 +33,34 @@ def tree_topology_cache(relation: Relation):
                 try:
                     match relation:
                         case "parent":
-                            nids = instance.cache.parent_id(*args, **kwargs)
+                            print(args, kwargs)
+                            nodes = instance.cache.parent(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "children":
-                            nids = instance.cache.children_ids(*args, **kwargs)
-                        case "descendant":
-                            nids = instance.cache.descendant_ids(*args, **kwargs)
-                        case "ancestor":
-                            nids = instance.cache.ancestor_ids(*args, **kwargs)
+                            nodes = instance.cache.children(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
+                        case "siblings":
+                            nodes = instance.cache.siblings(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
+                        case "descendants":
+                            nodes = instance.cache.descendants(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
+                        case "ancestors":
+                            nodes = instance.cache.ancestors(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "branch":
-                            nids = instance.cache.branch_ids(*args, **kwargs)
+                            nodes = instance.cache.branch(*args, **kwargs)
+                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case _:
                             raise NotImplementedError()
+                    print(nodes, fields)
                 except Exception as e:
                     return f(instance, *args, **kwargs)    
 
-                if isinstance(nids, list):
-                    return instance._nodes_from_nid(*nids)
-                elif isinstance(nids, int):
-                    return instance._node_from_nid(nids)
+                if isinstance(nodes, list):
+                    return instance._nodes(*nodes, fields=fields)
+                elif isinstance(nodes, str):
+                    return instance._node(nodes)
                 else:
                     return f(instance, *args, **kwargs)    
             else:
@@ -210,7 +221,7 @@ class TreeEngine(BoundEngine):
             ancestors.append(name)
         return self._nodes(*ancestors, fields= fields)
 
-    @tree_topology_cache("branchs")
+    @tree_topology_cache("branch")
     def branch_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         branch = NodePathCollection(*paths).branch_of(name)

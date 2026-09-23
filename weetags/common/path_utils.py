@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Generator, Literal
 
 
@@ -130,6 +131,10 @@ class NodePathCollection:
     def __repr__(self) -> str:
         return f"<NodePathCollection: size {len(self.paths)}>"
 
+    @classmethod
+    def from_generator(cls, g: Generator) -> NodePathCollection:
+        return cls(*[node["path"] for node in g])
+
     def ancestors_of(self, node: str) -> list[str]:
         ancestors = None
         for path in self._iter_path_with_node(node):
@@ -162,3 +167,18 @@ class NodePathCollection:
             if node not in path.nodes:
                 continue
             yield path
+
+    def unique_nodes(self) -> Generator[str]:
+        uniq = set()
+        for path in self.paths:
+            for node in path.nodes:
+                if node not in uniq:
+                    yield node
+                    uniq.add(node)
+
+    def node_references(self) -> dict[str, list[str]]:
+        references = defaultdict(list)
+        for path in self.paths:
+            for node in path.nodes:
+                references[node].append(path.path)
+        return references
