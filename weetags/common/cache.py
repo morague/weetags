@@ -28,6 +28,14 @@ class CacheEngine(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    def append(self, key: str, value: Any) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_keys_with_prefix(self, prefix: str) -> list[str]:
+        raise NotImplementedError()
+
+    @abstractmethod
     def check(self, key: str) -> bool:
         raise NotImplementedError()
     
@@ -54,6 +62,15 @@ class LocalCacheEngine(CacheEngine):
     def check(self, key: str) -> bool:
         return key in self.cache.keys()
 
+    def append(self, key: str, value: Any) -> None:
+        check = self.check(key)
+        if check is False:
+            self.set(key, [])
+        self.cache[key].append(value)
+
+    def get_keys_with_prefix(self, prefix: str) -> list[str]:
+        return [k for k in self.cache.keys() if k.startswith(prefix)]
+
 class MemcachedCacheEngine(CacheEngine):
     client: PooledClient
 
@@ -78,4 +95,7 @@ class MemcachedCacheEngine(CacheEngine):
         res = self.get(key, "no")
         if res == "no":
             check = False
-        return False
+        return check
+
+    def append(self, key: str, value: Any) -> None: ...
+    def get_keys_with_prefix(self, prefix: str) -> list[str]: ...

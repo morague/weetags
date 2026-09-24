@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import inspect
 from pathlib import Path
 from sqlalchemy import Table
 from datetime import datetime
@@ -112,26 +113,34 @@ def require_sqlite_version() -> bool:
     """
     return True
 
-def get_argument(source: tuple[tuple, dict],  name: str, index: int) -> Any:
-    args, kwargs = source
 
-    value = kwargs.get(name, None)
-    if value is None and len(args) >= index + 1:
-        value = args[index]
-    return value
-
-@define(frozen=True)
+@define
 class Signature:
-    callable: Callable = field()
+    f: Callable = field()
     args: tuple[Any] = field()
     kwargs: dict[str, Any] = field()
+    parameters: dict[str, Any] = field(factory=dict, init=False)
+
+    def __attrs_post_init__(self) -> None:
+        signature = inspect.signature(self.f)
+        parameters = {k:param.default for k,param in signature.parameters.items()}
+        parameters.update(self.kwargs)
+
+        ordered_keys = list([k for k in signature.parameters.keys() if k != "self"])
+        [parameters.update({ordered_keys[i]:v}) for i,v in enumerate(self.args)]
+        self.parameters = parameters
 
     @property
     def sha1_digest(self) -> str:
         args = json.dumps([self._serialize(v) for v in self.args])
         kwargs = json.dumps({k:self._serialize(v) for k,v in self.kwargs.items()})
-        name = self.callable.__name__
+        name = self.f.__name__
         return hashlib.sha1(f"{name}_{args}_{kwargs}".encode()).hexdigest()
+
+    def get_parameter(self, key: str, default: Any = None, or_raise: bool = False) -> Any:
+        if key not in self.parameters.keys() and or_raise:
+            raise KeyError(f"Unknown key {key}")
+        return self.parameters.get(key, default)
 
     def _serialize(self, value: Any) -> Any:
         if isinstance(value, datetime):

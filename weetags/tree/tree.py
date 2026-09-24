@@ -15,13 +15,7 @@ from weetags.tree.drawer import DrawStyle, TreeDrawer
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
 from weetags.tree.fields import TreeFieldsCollection
-from weetags.tree.update import (
-    JsonObjectAppendList,
-    JsonObjectPopList,
-    JsonObjectExtendList,
-    JsonObjectRemoveKey,
-    JsonObjectUpdateKey
-)
+
 
 class TreeAlteration(Alteration):
     def __init__(self, engine: TreeEngine) -> None:
@@ -82,20 +76,20 @@ class TreeMetadata:
     def pop_list(self, name: str, key: str) -> None:
         self._engine.pop_list(name, key)
 
-    def set_object_key(self, node_name: str, path: str, value: Any) -> None:
-        JsonObjectUpdateKey(self._engine).apply(node_name, path, value)
+    def set_object_key(self, name: str, path: str, value: Any) -> None:
+        self._engine.set_object_key(name, path, value)
 
-    def pop_object_key(self, node_name: str, path: str,) -> None:
-        JsonObjectRemoveKey(self._engine).apply(node_name, path)
+    def pop_object_key(self, name: str, path: str,) -> None:
+        self._engine.pop_object_key(name, path)
 
-    def object_append_list(self, node_name: str, path: str, value: Any) -> None:
-        JsonObjectAppendList(self._engine).apply(node_name, path, value)
+    def object_append_list(self, name: str, path: str, value: Any) -> None:
+        self._engine.object_append_list(name, path, value)
 
-    def object_extend_list(self, node_name: str, path: str, value: list[Any]) -> None:
-        JsonObjectExtendList(self._engine).apply(node_name, path, value)
+    def object_extend_list(self, name: str, path: str, value: list[Any]) -> None:
+        self._engine.object_extend_list(name, path, value)
 
-    def object_pop_list(self, node_name: str, path: str, index: int) -> None:
-        JsonObjectPopList(self._engine).apply(node_name, path, index)
+    def object_pop_list(self, name: str, path: str, index: int) -> None:
+        self._engine.object_pop_list(name, path, index)
 
 
 class Tree:

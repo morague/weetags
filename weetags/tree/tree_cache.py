@@ -35,10 +35,13 @@ class TreeCache:
         return self
     
     def query_key(self, signature: str) -> str:
-        return f"query_{self.tree_name}_{signature}"
+        return f"{self.tree_name}_query_{signature}"
 
     def reference_key(self, name: str) -> str:
-        return f"node_{self.tree_name}_{name}"
+        return f"{self.tree_name}_node_{name}"
+
+    def tracker_key(self, name: str) -> str:
+        return f"{self.tree_name}_tracker_{name}"
 
     def set(self, key: str, value: Any) -> None:
         self.cache_engine.set(key, value)
@@ -54,6 +57,22 @@ class TreeCache:
 
     def set_query_result(self, signature: str,  values: Any) -> None:
         self.set(self.query_key(signature), values)
+
+    def append_node_tracker(self, name: str, signature: str) -> None:
+        self.cache_engine.append(self.tracker_key(name), signature)
+
+    def clear_tracker(self, name: str) -> None:
+        tracker_key = self.tracker_key(name)
+        tracked = self.get(tracker_key)
+        for key in tracked:
+            self.pop(key)
+        self.pop(tracker_key)
+
+    def clear_all_tracker(self) -> None:
+        query_keys = self.cache_engine.get_keys_with_prefix(f"{self.tree_name}_query")
+        tracker_keys = self.cache_engine.get_keys_with_prefix(f"{self.tree_name}_tracker")
+        for key in query_keys + tracker_keys:
+            self.pop(key)
 
     def get_cached_result(self, signature: str) -> Any:
         value = self.get(self.query_key(signature))

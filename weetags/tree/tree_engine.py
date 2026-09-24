@@ -9,13 +9,14 @@ from functools import wraps
 from sqlalchemy import Table, create_engine, select, func, ColumnElement
 from sqlalchemy.engine import Engine as BaseEngine
 
-from typing import Any, Generator, Type
+from typing import Any, Generator, Literal, Type
 
 from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
 import weetags.common.utils as cutils
 import weetags.common.serializer as serializers
+import weetags.tree.update as upt
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
     PreOrderTreeTraversal, 
@@ -28,46 +29,63 @@ def query_cache(f):
     @wraps(f)
     def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
         if instance.cache is not None:
-            signature = cutils.Signature(f, args, kwargs).sha1_digest
-            check = instance.cache.check_cached_result_key(signature)
+            signature = cutils.Signature(f, args, kwargs)
+            check = instance.cache.check_cached_result_key(signature.sha1_digest)
             if check:
-                return instance.cache.get_cached_result(signature)
+                return instance.cache.get_cached_result(signature.sha1_digest)
 
             result = f(instance, *args, **kwargs)
-            instance.cache.set_query_result(signature, result)
+            instance.cache.set_query_result(signature.sha1_digest, result)
+
+            name = signature.get_parameter("name", "all")
+            instance.cache.append_node_tracker(name, signature.sha1_digest)
             return result
         else:
             return f(instance, *args, **kwargs)
     return wrapper
+
+def clear_query_cache(scope: Literal["partial", "all"]):
+    def inner(f):
+
+        @wraps(f)
+        def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
+            result = f(instance, *args, **kwargs)
+            if instance.cache is not None:
+                signature = cutils.Signature(f, args, kwargs)
+                match scope:
+                    case "partial":
+                        name = signature.get_parameter("name", "all")
+                        instance.cache.clear_tracker(name)
+                    case "all":
+                        instance.cache.clear_all_tracker()
+            return result
+        return wrapper
+    return inner
+
 
 def topology_cache(relation: Relation):
     def inner(f):
         @wraps(f)
         def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
             if instance.cache is not None:
+                signature = cutils.Signature(f, args, kwargs)
                 try:
                     match relation:
                         case "parent":
-                            print(args, kwargs)
-                            nodes = instance.cache.parent(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
+                            nodes = instance.cache.parent(*args, **kwargs)                            
                         case "children":
                             nodes = instance.cache.children(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "siblings":
                             nodes = instance.cache.siblings(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "descendants":
                             nodes = instance.cache.descendants(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "ancestors":
                             nodes = instance.cache.ancestors(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case "branch":
                             nodes = instance.cache.branch(*args, **kwargs)
-                            fields = cutils.get_argument((args, kwargs), "fields", 1)
                         case _:
                             raise NotImplementedError()
+                    fields = signature.get_parameter("fields")
                 except Exception as e:
                     return f(instance, *args, **kwargs)    
 
@@ -186,6 +204,20 @@ class TreeEngine(BoundEngine):
     @query_cache
     def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         return self._node(name)
+
+    @query_cache
+    def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
+        stmt = select(self.tree).where(*conditions)
+        return self._serialize_records(stmt)
+
+    def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
+        ...
+
+    def search(self, value: Any, key: str = "name", fields: list[str] | None = None) -> list[dict[str, Any]]:
+        f = self._field_or_raise(self.tree, key)
+        stmt = select(*self._get_selected(fields)).where(f.ilike(f"%{value}%"))
+        return self._serialize_records(stmt)
+    
 
     @query_cache
     def nodes_where(self, conditions: list, fields: list[str] | None = None, page: int = 0, page_size: int = 10) -> list[dict[str, Any]]:
@@ -314,6 +346,10 @@ class TreeEngine(BoundEngine):
             yield from self.level_order_traversal(*next_level)
     
 
+
+
+
+    @clear_query_cache("all")
     def add_node(self, name: str, parent: str | None, metadata: dict[str, Any] | None = None) -> None:
         if parent is None and self._n_roots() > 0:
             raise KeyError("Tree already has a root node.")
@@ -339,7 +375,7 @@ class TreeEngine(BoundEngine):
         if parent is not None:
             self._add_child(parent, name)
 
-
+    @clear_query_cache("all")
     def remove_node(self, name: str, force: bool = False) -> None:
         node = self._node_or_raise(name)
         if len(node.get("children", [])) > 0 and force is False:
@@ -352,24 +388,29 @@ class TreeEngine(BoundEngine):
             self._remove_child(parent, name)
         self.delete_topology(node["id"])
 
+    @clear_query_cache("all")
     def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
         stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.name).where_from_str(conditions)
         names = self._serialize_list(stmt())
         [self.remove_node(name, force) for name in names]
 
+    @clear_query_cache("all")
     def prune_subtree(self, name: str) -> None:
         """prune a node all of it's subtree."""
         self.prune(name)
 
+    @clear_query_cache("partial")
     def update_node(self, name: str, values: dict[str, Any]) -> None:
         node = self._node_or_raise(name)
         self.update_metadata([node["id"]], values)
 
+    @clear_query_cache("all")
     def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
         stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.id).where_from_str(conditions)
         nids = self._serialize_list(stmt())
         self.update_metadata(nids, values)
 
+    @clear_query_cache("partial")
     def update_node_name(self, name: str, new_name: str) -> None:
         node = self._node_or_raise(name)
         _ = self._node_or_raise(new_name)
@@ -383,6 +424,7 @@ class TreeEngine(BoundEngine):
         for child in children_names:
             self._replace_parent(child, new_name)
 
+    @clear_query_cache("all")
     def move_subtree(self, name: str, parent_new_name: str | None) -> None:
         if parent_new_name is None and self._n_roots() > 0:
             raise ValueError("Tree already has a root node.")
@@ -416,6 +458,60 @@ class TreeEngine(BoundEngine):
         for child in children:
             self._update_subtree_path(child, path)
 
+    @clear_query_cache("partial")
+    def append_list(self, name: str, key: str, value: Any) -> None:
+        node = self._node_or_raise(name)
+        v: list[Any] = node.get(key, [])
+        v.append(value)
+        self.update_metadata([node["id"]], {key:v})
+
+    @clear_query_cache("partial")
+    def extend_list(self, name: str, key: str, value: list[Any]) -> None:
+        node = self._node_or_raise(name)
+        v: list[Any] = node.get(key, [])
+        v.extend(value)
+        self.update_metadata([node["id"]], {key:v})
+
+    @clear_query_cache("partial")
+    def pop_list(self, name: str, key: str, value: Any = -1) -> Any:
+        node = self._node_or_raise(name)
+        v: list[Any] = node.get(key, [])
+        try: 
+            index = v.index(value)
+        except IndexError:
+            return None
+
+        poped = v.pop(index)
+        self.update_metadata([node["id"]], {key:v})
+        return poped
+
+    @clear_query_cache(scope="partial")
+    def set_object_key(self, name: str, path: str, value: Any) -> None:
+        upt.JsonObjectUpdateKey(self).apply(name, path, value)
+
+    @clear_query_cache(scope="partial")
+    def pop_object_key(self, name: str, path: str,) -> None:
+        upt.JsonObjectRemoveKey(self).apply(name, path)
+
+    @clear_query_cache(scope="partial")
+    def object_append_list(self, name: str, path: str, value: Any) -> None:
+        upt.JsonObjectAppendList(self).apply(name, path, value)
+
+    @clear_query_cache(scope="partial")
+    def object_extend_list(self, name: str, path: str, value: list[Any]) -> None:
+        upt.JsonObjectExtendList(self).apply(name, path, value)
+
+    @clear_query_cache(scope="partial")
+    def object_pop_list(self, name: str, path: str, index: int) -> None:
+        upt.JsonObjectPopList(self).apply(name, path, index)
+
+
+    def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
+        with open(outfile, "w+") as f:
+            for node in self.traversal(subtree, order):
+                payload = json.dumps(node)
+                f.write(payload + "\n")
+
     def _update_subtree_path(self, name: str, parent_path: str | None = None) -> None:
         node = self._node_or_raise(name)
         node_name = node["name"]
@@ -429,46 +525,3 @@ class TreeEngine(BoundEngine):
         children = node.get("children", [])
         for child in children:
             self._update_subtree_path(child, path)
-
-    def append_list(self, name: str, key: str, value: Any) -> None:
-        node = self._node_or_raise(name)
-        v: list[Any] = node.get(key, [])
-        v.append(value)
-        self.update_metadata([node["id"]], {key:v})
-
-    def extend_list(self, name: str, key: str, value: list[Any]) -> None:
-        node = self._node_or_raise(name)
-        v: list[Any] = node.get(key, [])
-        v.extend(value)
-        self.update_metadata([node["id"]], {key:v})
-
-    def pop_list(self, name: str, key: str, value: Any = -1) -> Any:
-        node = self._node_or_raise(name)
-        v: list[Any] = node.get(key, [])
-        try: 
-            index = v.index(value)
-        except IndexError:
-            return None
-
-        poped = v.pop(index)
-        self.update_metadata([node["id"]], {key:v})
-        return poped
-
-    def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
-        with open(outfile, "w+") as f:
-            for node in self.traversal(subtree, order):
-                payload = json.dumps(node)
-                f.write(payload + "\n")
-
-    def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
-        stmt = select(self.tree).where(*conditions)
-        return self._serialize_records(stmt)
-
-    def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
-        ...
-
-    def search(self, value: Any, key: str = "name", fields: list[str] | None = None) -> list[dict[str, Any]]:
-        f = self._field_or_raise(self.tree, key)
-        stmt = select(*self._get_selected(fields)).where(f.ilike(f"%{value}%"))
-        return self._serialize_records(stmt)
-    
