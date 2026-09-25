@@ -94,7 +94,7 @@ class TreeMetadata:
 
 class Tree:
     name: str
-    f: TreeFieldsCollection
+    c: TreeFieldsCollection
     _engine: TreeEngine
     
     def __init__(
@@ -218,7 +218,7 @@ class Tree:
 
     def sync(self) -> None:
         self._engine.reflect()
-        self.f = TreeFieldsCollection.from_table(self._engine.tree)
+        self.c = TreeFieldsCollection.from_table(self._engine.tree)
 
     def set_cache(self, cache: TreeCache | None = None) -> None:
         self._engine.cache = cache

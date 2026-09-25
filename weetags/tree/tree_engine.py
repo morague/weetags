@@ -6,7 +6,7 @@ from functools import wraps
 
 
 
-from sqlalchemy import Table, create_engine, select, func, ColumnElement
+from sqlalchemy import Table, create_engine, select, func, ColumnElement, TableValuedAlias
 from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator, Literal, Type
@@ -205,9 +205,13 @@ class TreeEngine(BoundEngine):
     def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         return self._node(name)
 
-    @query_cache
     def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
-        stmt = select(self.tree).where(*conditions)
+        tables, c = [self.tree], []
+        for condition in conditions:
+            t = getattr(condition, "t", None)
+            if t is not None and t not in tables:
+                tables.append(t)
+        stmt = select(self.tree).select_from(*tables).where(*conditions)
         return self._serialize_records(stmt)
 
     def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
