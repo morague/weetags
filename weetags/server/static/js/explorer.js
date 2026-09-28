@@ -44,6 +44,50 @@ document.getElementsByTagName("body")[0].addEventListener("click", event => {
     
 })
 
+async function open_dropdown(e) {
+    
+    let dropdown = e.closest(".dropdown");
+    if (dropdown.classList.contains("is-active")) {
+        dropdown.classList.remove("is-active");
+    } else {
+        dropdown.classList.add("is-active");
+    }
+    
+}
+
+async function ffilter() {
+    let field = document.createElement("div");
+    field.classList.add("field");
+
+    let control = document.createElement("div");
+    control.classList.add("control");
+
+
+    let tag = document.createElement("div");
+    tag.classList.add("tags", "has-addons", "are-medium", "filter");
+
+
+    // select callable
+    // input args that generate new input when filled
+    let func = await selectable(sql_functions, "json_each", "filter-func");
+    let path = await  filter_input("Inner Path");
+    let f = await selectable(fields, "name", "filter-fname");
+    let op = await selectable(operators, "=", "filter-op");
+    let v = await  filter_input();
+    let del = await filter_delete();
+
+    tag.append(func);
+    tag.appendChild(f);
+    tag.appendChild(path);
+    tag.appendChild(op);
+    tag.appendChild(v);
+    tag.appendChild(del);
+
+    control.appendChild(tag)
+    field.appendChild(control)
+    return field
+
+}
 
 async function filter() {
     let field = document.createElement("div");
@@ -76,7 +120,7 @@ async function selectable(values, selected, cls) {
     span.classList.add("tag", "is-rounded", "fvalue", "is-hoverable");
 
     let select = document.createElement("select");
-    select.classList.add(cls)
+    select.classList.add(cls, "arg")
     for (var i = 0; i < values.length; i++) {
         let v = values[i];
         let opt = document.createElement("option");
@@ -91,15 +135,15 @@ async function selectable(values, selected, cls) {
     return span
 }
 
-async function filter_input() {
+async function filter_input(placeholder="Value", defautl_value=null) {
     let span = document.createElement("span");
     span.classList.add("tag", "is-rounded", "is-hoverable");
 
     let input = document.createElement("input");
-    input.classList.add("filter-value");
+    input.classList.add("filter-value", "arg");
     input.setAttribute("type", "text");
-    input.placeholder = "Value";
-
+    input.placeholder = placeholder;
+    input.value = defautl_value;
     span.appendChild(input);
     return span
 }
@@ -116,10 +160,18 @@ async function filter_delete() {
     return span
 }
 
-async function add_filter() {
+async function add_f_filter(e) {
+    let container = document.getElementById("filters");
+    let f = await ffilter();
+    await open_dropdown(e);
+    container.append(f);
+
+}
+
+async function add_filter(e) {
     let container = document.getElementById("filters");
     let f = await filter();
-
+    await open_dropdown(e);
     container.append(f);
 }
 
@@ -132,15 +184,19 @@ async function filters() {
     let filters = document.getElementById("filters").getElementsByClassName("filter");
     for (var i = 0; i < filters.length; i++) {
         let f = filters[i]
-        
-        let op_selector = f.getElementsByClassName("filter-op")[0];
-        let operator = await get_selected_value(op_selector);
-        
-        let fname_selector = f.getElementsByClassName("filter-fname")[0];
-        let fname = await get_selected_value(fname_selector);
-
-        let value = f.getElementsByClassName("filter-value")[0].value;
-        conditions.push([fname, operator, value]);
+        let arg_containers = f.getElementsByClassName("arg");
+        let block = [];
+        for (var j = 0; j < arg_containers.length; j++) {
+            let c = arg_containers[j];
+            if (c.tagName == "INPUT") {
+                let arg = c.value || null;
+                block.push(arg);
+            } else if (c.tagName == "SELECT") {
+                let arg = await get_selected_value(c);
+                block.push(arg);
+            }
+        }
+        conditions.push(block);
     }   
     return conditions
 }

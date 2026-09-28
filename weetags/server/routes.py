@@ -6,7 +6,7 @@ from sanic import Blueprint, HTTPResponse, Request, json, redirect, html
 from sanic.response import JSONResponse, ResponseStream, HTTPResponse
 from sanic_ext import render
 
-from weetags.common.utils import OP
+from weetags.common.utils import OP, SQLF
 from weetags.tree.tree_engine import TreeEngine
 from weetags.tree.tree import Tree
 import weetags.server.arguments as arg
@@ -223,7 +223,8 @@ async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPRe
         "page": arguments.page,
         "page_size": arguments.page_size,
         "fields": engine._topology.columns.keys() + [f for f in engine._metadata.columns.keys() if f != "id"],
-        "operators": list(OP.keys())
+        "operators": list(OP.keys()),
+        "sql_functions": list(SQLF.keys())
     }
     return await render("explorer.html", context= context)
 

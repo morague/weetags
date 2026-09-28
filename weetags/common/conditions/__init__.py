@@ -18,6 +18,7 @@ conditions can be a
 
 def handle_conditions(conditions: list[Any]) -> list[ConditionExpr] | list[ConditionBlock]:
     assert isinstance(conditions, Sequence)
+    print(conditions)
     if all([isinstance(c, str) for c in conditions]):
         parsed = parse_condition_exprs(conditions)
     elif all([isinstance(c, Sequence) for c in conditions]):

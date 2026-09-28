@@ -153,10 +153,23 @@
         <nav class="level m-3">
             <div class="level-left">
                 <div class="level-item">
-                    <button class="button is-primary">Fields</button>
-                </div>
-                <div class="level-item">
-                    <button class="button is-primary" onclick="add_filter()">Add Filter</button>
+                    <div class="dropdown">
+                        <div class="dropdown-trigger">
+                            <button class="button is-primary" aria-haspopup="true" aria-controls="dropdown-menu3" onclick="open_dropdown(this)">
+                                <span>Add filter</span>
+                                <span class="icon is-small">
+                                    <ion-icon name="caret-down-outline"></ion-icon>
+                                </span>
+                            </button>
+                        </div>
+                        <div class="dropdown-menu" id="dropdown-menu3" role="menu">
+                            <div class="dropdown-content">
+                                <a class="dropdown-item" onclick="add_filter(this)"> <strong>Filter</strong>  </a>
+                                <hr class="dropdown-divider" />
+                                <a class="dropdown-item" onclick="add_f_filter(this)"> <strong>Funtionnal Filter</strong> </a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -217,6 +230,7 @@
     <script>
         let fields = JSON.parse('{{fields|tojson}}');
         let operators = JSON.parse('{{operators|tojson}}');
+        let sql_functions = JSON.parse('{{sql_functions|tojson}}');
     </script>
     <script type="text/javascript" src="/static/js/explorer.js"></script>
 

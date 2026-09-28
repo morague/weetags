@@ -198,6 +198,7 @@ class ConditionBlock:
             raise KeyError(f"Unknown sql function: {self.left[0]}")
 
         fname, *args = self.left[1:]
+        args = [arg for arg in args if arg != None]
         column = get_column(table, fname)
         f = func.to_callable()
 

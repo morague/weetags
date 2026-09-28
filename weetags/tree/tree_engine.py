@@ -236,7 +236,8 @@ class TreeEngine(BoundEngine):
             .limit(page_size)
             .order_by(self.tree.c.path)
         )
-        print(stmt)
+        print("here")
+        print(stmt())
         return self._serialize_records(stmt())
 
     @query_cache

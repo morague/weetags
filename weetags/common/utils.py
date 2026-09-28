@@ -26,6 +26,9 @@ OP = {
     "not_in": "not_in",
     "is": "is_",
     "is_not": "is_not",
+}
+
+SQLF = {
     "json_each": "json_each"
 }
 
