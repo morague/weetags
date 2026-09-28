@@ -149,5 +149,7 @@ class Signature:
             return [self._serialize(v) for v in value]
         elif isinstance(value, dict):
             return {k:self._serialize(v) for k,v in value.items()}
-        else:
+        elif isinstance(value, (bool, str, int)):
             return value
+        else:
+            return str(value)

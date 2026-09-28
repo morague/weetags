@@ -3,15 +3,16 @@ from __future__ import annotations
 import re
 import inspect
 from abc import ABC
-from collections import ChainMap
+from collections import ChainMap, defaultdict
 from urllib.parse import unquote
-from sanic import Request
+from sanic import Request, request
 from functools import wraps
 from attrs import define, field, validators, Attribute
 
 from typing import Any, Callable, Type, get_args
 
 import weetags.common.types as ty
+from weetags.common.conditions import handle_conditions, ConditionBlock, ConditionExpr
 
 def int_converter(value: Any) -> int:
     if isinstance(value, int):
@@ -104,13 +105,20 @@ class ArgumentParser(ABC):
     @classmethod
     def from_request(cls, request: Request) -> ArgumentParser:
         url_args = {k: (unquote(v) if isinstance(v, str) else v) for k, v in request.match_info.items()} or {}
-        query_args = {k.replace("-", "_"): v for k, v in request.get_query_args(keep_blank_values=True)} or {}
+        query_args = cls.query_args(request)
         payload = request.json or {}
         params: dict[str, Any] = dict(ChainMap(payload, url_args, query_args))
         return cls(**params)
     
     def get_kwargs(self, callable: Callable) -> dict[str, Any]:
         return {k:getattr(self, k, None) for k in inspect.getfullargspec(callable).args if getattr(self, k, None) is not None and k != "self"}
+
+    @staticmethod
+    def query_args(request: Request) -> dict[str, Any]:
+        _map = defaultdict(list)
+        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+        args = {k:(v if len(v) > 1 else v[0]) for k,v in _map.items()}
+        return args
 
 @define
 class BaseTreeArguments(ArgumentParser):
@@ -120,9 +128,24 @@ class BaseTreeArguments(ArgumentParser):
 class NodesArguments(ArgumentParser):
     tree_name: str = field(validator=validators.instance_of(str))
     fields: list[str] | None = field(default=None, converter=list_or_none_converter, validator=validate_list_or_none)
-    q: list | None = field(default=None)
+    q: list[ConditionBlock] | list[ConditionExpr] | None = field(default=None, converter=handle_conditions)
     page: int = field(default=0, converter=int_converter, validator=validators.instance_of(int))
     page_size: int = field(default=100, converter=int_converter, validator=validators.instance_of(int))
+
+    @staticmethod
+    def query_args(request: Request) -> dict[str, Any]:
+        _map = defaultdict(list)
+        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+
+        args = {}
+        for k,v in _map.items():
+            if k == "q":
+                args.update({k:v})
+            elif len(v) > 1:
+                args.update({k:v})
+            else:
+                args.update({k:v[0]})
+        return args
 
 
 @define

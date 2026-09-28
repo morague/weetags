@@ -15,89 +15,90 @@ from sqlalchemy import (
 from typing import Any, Callable, Literal
 
 from weetags.common.utils import OP
+from weetags.common.conditions import ConditionExpr, sqlalch_conditions
 
-class SQLConditionParser:
-    table: Table
+# class SQLConditionParser:
+#     table: Table
 
-    def __init__(self, table: Table) -> None:
-        self.table = table
-        self._anon_table = []
+#     def __init__(self, table: Table) -> None:
+#         self.table = table
+#         self._anon_table = []
 
-    def parse(self, conditions: list[tuple[str, str | tuple, str] | str]) -> tuple[list[Table], ColumnElement | None]:
-        condition, operator = None, "__and__"
-        for block in conditions:
-            if isinstance(block, tuple) or isinstance(block, list):
-                cond = self._parse_condition_block(block)
-                if condition is None:
-                    condition = cond
-                else:
-                    handler = getattr(condition, operator)
-                    condition = handler(cond)
-                operator = "__and__"
-            elif self._is_operator(block) and condition is None:
-                raise ValueError(f"operator {block} cannot be first in a conditions")
-            elif self._is_operator(block) and self._is_and(block):
-                operator = "__and__"
-            elif self._is_operator(block) and self._is_or(block):
-                operator = "__or__"
-        return (self._anon_table, condition)
+#     def parse(self, conditions: list[tuple[str, str | tuple, str] | str]) -> tuple[list[Table], ColumnElement | None]:
+#         condition, operator = None, "__and__"
+#         for block in conditions:
+#             if isinstance(block, tuple) or isinstance(block, list):
+#                 cond = self._parse_condition_block(block)
+#                 if condition is None:
+#                     condition = cond
+#                 else:
+#                     handler = getattr(condition, operator)
+#                     condition = handler(cond)
+#                 operator = "__and__"
+#             elif self._is_operator(block) and condition is None:
+#                 raise ValueError(f"operator {block} cannot be first in a conditions")
+#             elif self._is_operator(block) and self._is_and(block):
+#                 operator = "__and__"
+#             elif self._is_operator(block) and self._is_or(block):
+#                 operator = "__or__"
+#         return (self._anon_table, condition)
 
-    def _is_operator(self, block: tuple[str, str | list, str] | str) -> bool:
-        return isinstance(block, str) and block in ["and", "or", "AND", "OR", "&", "|"]
+#     def _is_operator(self, block: tuple[str, str | list, str] | str) -> bool:
+#         return isinstance(block, str) and block in ["and", "or", "AND", "OR", "&", "|"]
 
-    def _is_and(self, block: str) -> bool:
-        return block in ["and", "AND", "&"]
+#     def _is_and(self, block: str) -> bool:
+#         return block in ["and", "AND", "&"]
 
-    def _is_or(self, block: str) -> bool:
-        return block in ["or", "OR", "|"]
+#     def _is_or(self, block: str) -> bool:
+#         return block in ["or", "OR", "|"]
 
-    def _parse_condition_block(self, block: tuple[str, str | tuple[str, tuple[Any]], Any]) -> ColumnElement:
-        key, op_block, value = block
-        column = self._get_column(key)
-        if isinstance(op_block, str):
-            op = self._get_op(op_block)
-            callback = getattr(column, op, None)
-            if callback is None:
-                raise ValueError(f"Unknown operator: {op}") 
-            cond = callback(value)
-        else:
-            cond = self._apply_special_op(column, op_block, value)
-        return cond
+#     def _parse_condition_block(self, block: tuple[str, str | tuple[str, tuple[Any]], Any]) -> ColumnElement:
+#         key, op_block, value = block
+#         column = self._get_column(key)
+#         if isinstance(op_block, str):
+#             op = self._get_op(op_block)
+#             callback = getattr(column, op, None)
+#             if callback is None:
+#                 raise ValueError(f"Unknown operator: {op}") 
+#             cond = callback(value)
+#         else:
+#             cond = self._apply_special_op(column, op_block, value)
+#         return cond
 
-    def _get_column(self, field: str) -> Column:
-        column = self.table.c.get(field)
-        if column is None:
-            raise ValueError(f"Unknown column: {field}")
-        return column
+#     def _get_column(self, field: str) -> Column:
+#         column = self.table.c.get(field)
+#         if column is None:
+#             raise ValueError(f"Unknown column: {field}")
+#         return column
 
-    def _get_op(self, op: str) -> str:
-        callable_name = OP.get(op, None)
-        if callable_name is None:
-            raise KeyError(f"Unknown operator: {op}")
-        return callable_name
+#     def _get_op(self, op: str) -> str:
+#         callable_name = OP.get(op, None)
+#         if callable_name is None:
+#             raise KeyError(f"Unknown operator: {op}")
+#         return callable_name
 
-    def _apply_special_op(self, column: ColumnElement, op_block: tuple[str, tuple[Any]], value: Any) -> ColumnElement:
-        callback_name, args = op_block
+#     def _apply_special_op(self, column: ColumnElement, op_block: tuple[str, tuple[Any]], value: Any) -> ColumnElement:
+#         callback_name, args = op_block
 
-        f = getattr(func, callback_name, None)
-        if f is None:
-            raise ValueError(f"Unknown function: {callback_name}")
+#         f = getattr(func, callback_name, None)
+#         if f is None:
+#             raise ValueError(f"Unknown function: {callback_name}")
 
-        match callback_name:
-            case "json_each":
-                op = self._apply_json_each(f, column, args, value)  
-            case _:
-                raise ValueError(f"Non handled function: {callback_name}")
-        return op
+#         match callback_name:
+#             case "json_each":
+#                 op = self._apply_json_each(f, column, args, value)  
+#             case _:
+#                 raise ValueError(f"Non handled function: {callback_name}")
+#         return op
     
-    def _apply_json_each(self, f: Callable, column: ColumnElement, args: tuple[Any], value: Any) -> ColumnElement:
-        if len(args) <= 1:
-            t = f(column, *args).table_valued('value', joins_implicitly=True)
-        else:
-            raise ValueError(f"too many arguments: {args}")
-        op = t.c.value == value
-        self._anon_table.append(t)
-        return op
+#     def _apply_json_each(self, f: Callable, column: ColumnElement, args: tuple[Any], value: Any) -> ColumnElement:
+#         if len(args) <= 1:
+#             t = f(column, *args).table_valued('value', joins_implicitly=True)
+#         else:
+#             raise ValueError(f"too many arguments: {args}")
+#         op = t.c.value == value
+#         self._anon_table.append(t)
+#         return op
 
 
 
@@ -117,6 +118,7 @@ class QueryBuilder:
 
     def __init__(self, tree: Table, metadata: MetaData) -> None:
         self.metadata = metadata
+        self.tree = tree
 
         self._limit = None
         self._offset = None
@@ -207,13 +209,14 @@ class QueryBuilder:
         columns = self._str_to_column(*fields)
         return self.fields(*columns)
 
-    def where_from_str(self, conditions: list[tuple | str]) -> QueryBuilder:
-        table = self._get_table()
-        tables, where = SQLConditionParser(table).parse(conditions)
-        self._from.extend(tables)
+    def where_from_str(self, *conditions: ConditionExpr) -> QueryBuilder:
+        anons, exprs = sqlalch_conditions(self.tree, conditions)
+        for table in anons:
+            if table not in self._from:
+                self._from.append(table) 
 
-        if where is not None:
-            return self.where(where)
+        if exprs is not None:
+            return self.where(*exprs)
         return self
 
     def _get_column(self, field: str, table: Table) -> Column:

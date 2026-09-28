@@ -231,11 +231,12 @@ class TreeEngine(BoundEngine):
             QueryBuilder(self.tree, self.metadata)
             .select()
             .fields_from_str(*fields)
-            .where_from_str(conditions)
+            .where_from_str(*conditions)
             .offset(page * page_size)
             .limit(page_size)
             .order_by(self.tree.c.path)
         )
+        print(stmt)
         return self._serialize_records(stmt())
 
     @query_cache
@@ -394,7 +395,7 @@ class TreeEngine(BoundEngine):
 
     @clear_query_cache("all")
     def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.name).where_from_str(conditions)
+        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.name).where_from_str(*conditions)
         names = self._serialize_list(stmt())
         [self.remove_node(name, force) for name in names]
 
@@ -410,7 +411,7 @@ class TreeEngine(BoundEngine):
 
     @clear_query_cache("all")
     def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.id).where_from_str(conditions)
+        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.id).where_from_str(*conditions)
         nids = self._serialize_list(stmt())
         self.update_metadata(nids, values)
 
