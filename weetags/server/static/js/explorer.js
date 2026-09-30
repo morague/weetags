@@ -55,6 +55,29 @@ async function open_dropdown(e) {
     
 }
 
+async function rfilter() {
+    let field = document.createElement("div");
+    field.classList.add("field");
+
+    let control = document.createElement("div");
+    control.classList.add("control");
+
+
+    let tag = document.createElement("div");
+    tag.classList.add("tags", "has-addons", "are-medium", "relation");
+
+    let r = await selectable("relation", relations, "children", "filter-rel");
+    let v = await  filter_input("value", placeholder="Node-name");
+    let del = await filter_delete();
+    tag.appendChild(r);
+    tag.appendChild(v);
+    tag.appendChild(del);
+
+    control.appendChild(tag)
+    field.appendChild(control)
+    return field
+}
+
 async function ffilter() {
     let field = document.createElement("div");
     field.classList.add("field");
@@ -69,11 +92,11 @@ async function ffilter() {
 
     // select callable
     // input args that generate new input when filled
-    let func = await selectable(sql_functions, "json_each", "filter-func");
-    let path = await  filter_input("Inner Path");
-    let f = await selectable(fields, "name", "filter-fname");
-    let op = await selectable(operators, "=", "filter-op");
-    let v = await  filter_input();
+    let func = await selectable("func", sql_functions, "json_each", "filter-func");
+    let path = await  filter_input("func_args", "Inner Path");
+    let f = await selectable("func_args", fields, "name", "filter-fname");
+    let op = await selectable("operator", operators, "=", "filter-op");
+    let v = await  filter_input("value");
     let del = await filter_delete();
 
     tag.append(func);
@@ -100,9 +123,9 @@ async function filter() {
     let tag = document.createElement("div");
     tag.classList.add("tags", "has-addons", "are-medium", "filter");
     
-    let f = await selectable(fields, "name", "filter-fname");
-    let op = await selectable(operators, "=", "filter-op");
-    let v = await  filter_input();
+    let f = await selectable("fname", fields, "name", "filter-fname");
+    let op = await selectable("operator", operators, "=", "filter-op");
+    let v = await  filter_input("value");
     let del = await filter_delete();
 
     tag.appendChild(f);
@@ -115,12 +138,14 @@ async function filter() {
     return field
 }
 
-async function selectable(values, selected, cls) {
+async function selectable(key, values, selected, cls) {
     let span = document.createElement("span");
     span.classList.add("tag", "is-rounded", "fvalue", "is-hoverable");
+    span.setAttribute("key", key)
 
     let select = document.createElement("select");
     select.classList.add(cls, "arg")
+    select.setAttribute("key", key)
     for (var i = 0; i < values.length; i++) {
         let v = values[i];
         let opt = document.createElement("option");
@@ -135,12 +160,14 @@ async function selectable(values, selected, cls) {
     return span
 }
 
-async function filter_input(placeholder="Value", defautl_value=null) {
+async function filter_input(key, placeholder="Value", defautl_value=null) {
     let span = document.createElement("span");
     span.classList.add("tag", "is-rounded", "is-hoverable");
+    
 
     let input = document.createElement("input");
     input.classList.add("filter-value", "arg");
+    input.setAttribute("key", key)
     input.setAttribute("type", "text");
     input.placeholder = placeholder;
     input.value = defautl_value;
@@ -153,12 +180,21 @@ async function filter_delete() {
     span.classList.add("tag", "is-rounded", "is-delete", "is-hoverable");
 
     span.onclick = (e) => {
-        let element = e.target.closest(".filter");
+        let element = e.target.closest(".field");
         element.remove();
     };
 
     return span
 }
+
+async function add_r_filter(e) {
+    let container = document.getElementById("filters");
+    let f = await rfilter();
+    await open_dropdown(e);
+    container.append(f);
+
+}
+
 
 async function add_f_filter(e) {
     let container = document.getElementById("filters");
@@ -175,25 +211,29 @@ async function add_filter(e) {
     container.append(f);
 }
 
-async function remove_filter(element) {
-    element.parentElement.parentElement.remove();
-}
-
-async function filters() {
+async function filters(cls) {
     var conditions = [];
-    let filters = document.getElementById("filters").getElementsByClassName("filter");
+    let filters = document.getElementById("filters").getElementsByClassName(cls);
     for (var i = 0; i < filters.length; i++) {
         let f = filters[i]
         let arg_containers = f.getElementsByClassName("arg");
-        let block = [];
+        let block = {};
         for (var j = 0; j < arg_containers.length; j++) {
             let c = arg_containers[j];
             if (c.tagName == "INPUT") {
-                let arg = c.value || null;
-                block.push(arg);
+                var arg = c.value || null;
+                var key = c.getAttribute("key");
             } else if (c.tagName == "SELECT") {
-                let arg = await get_selected_value(c);
-                block.push(arg);
+                var arg = await get_selected_value(c);
+                var key = c.getAttribute("key");
+            }
+
+            if (key == "func_args" && block[key] === undefined) {
+                block[key] = [arg]
+            } else if (key == "func_args") {
+                block[key].push(arg)
+            } else {
+                block[key] = arg
             }
         }
         conditions.push(block);
@@ -239,10 +279,12 @@ async function search(tree_name, page=0) {
     await create_loader();
 
     let endpoint = "/v1/trees/"+tree_name+"/nodes";
-    let q = await filters();
+    let q = await filters("filter");
+    let r = await filters("relation");
     let fields = await fselected();
     let page_size = document.getElementById("results").getAttribute("page_size");
-    let body = JSON.stringify({"q": q, "fields": fields, "page": page, "page_size": parseInt(page_size)});
+    let body = JSON.stringify({"q": q, "r": r, "fields": fields, "page": page, "page_size": parseInt(page_size)});
+    console.log(body);
     let headers = new Headers({ "Accept":"application/json", "Content-Type":"application/json" });
     let response = await request(endpoint, "POST", body, headers);
 

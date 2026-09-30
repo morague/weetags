@@ -146,6 +146,7 @@ class Rules:
     def _set_default(self, default: Literal["deny", "allow"]) -> None:
         if default == "deny":
             table = self._engine._table_or_raise("rules")
+            self._engine._write(table, {"priority": 999, "type": "path", "method": ".*", "rule": "/favicon.ico*", "role": "*"})
             self._engine._write(table, {"priority": 999, "type": "path", "method": ".*", "rule": "/static*", "role": "*"})
             self._engine._write(table, {"priority": 999, "type": "blueprint", "method": ".*", "rule": "auth", "role": "*"})
             self._engine._write(table, {"priority": 1000, "type": "path", "method": ".*", "rule": "/*", "role": None})

@@ -9,10 +9,10 @@ from sanic import Request, request
 from functools import wraps
 from attrs import define, field, validators, Attribute
 
-from typing import Any, Callable, Type, get_args
+from typing import Any, Callable, Sequence, Type, get_args
 
 import weetags.common.types as ty
-from weetags.common.conditions import handle_conditions, ConditionBlock, ConditionExpr
+from weetags.common.conditions import Condition, convert_cmp_conditions, convert_rel_conditions
 
 def int_converter(value: Any) -> int:
     if isinstance(value, int):
@@ -128,9 +128,33 @@ class BaseTreeArguments(ArgumentParser):
 class NodesArguments(ArgumentParser):
     tree_name: str = field(validator=validators.instance_of(str))
     fields: list[str] | None = field(default=None, converter=list_or_none_converter, validator=validate_list_or_none)
-    q: list[ConditionBlock] | list[ConditionExpr] | None = field(default=None, converter=handle_conditions)
+    q: Sequence[Condition] | None = field(default=None, converter=convert_cmp_conditions)
+    r: Sequence[Condition] | None = field(default=None, converter=convert_rel_conditions)
     page: int = field(default=0, converter=int_converter, validator=validators.instance_of(int))
     page_size: int = field(default=100, converter=int_converter, validator=validators.instance_of(int))
+    
+    @staticmethod
+    def query_args(request: Request) -> dict[str, Any]:
+        _map = defaultdict(list)
+        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+
+        args = {}
+        for k,v in _map.items():
+            if k in ["q", "r"]:
+                args.update({k:v})
+            elif len(v) > 1:
+                args.update({k:v})
+            else:
+                args.update({k:v[0]})
+        return args
+
+@define
+class ClosestNodesArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    fields: list[str] | None = field(default=None, converter=list_or_none_converter, validator=validate_list_or_none)
+    q: Sequence[Condition] | None = field(default=None, converter=convert_cmp_conditions)
+    r: Sequence[Condition] | None = field(default=None, converter=convert_rel_conditions)
 
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
@@ -139,7 +163,7 @@ class NodesArguments(ArgumentParser):
 
         args = {}
         for k,v in _map.items():
-            if k == "q":
+            if k in ["q", "r"]:
                 args.update({k:v})
             elif len(v) > 1:
                 args.update({k:v})

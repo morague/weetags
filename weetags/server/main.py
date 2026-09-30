@@ -14,7 +14,7 @@ from weetags.common.loaders import ConfigLoader, YamlLoader, Loader
 from weetags.common.configs import TreeConfig
 import weetags.server.listeners as lstn
 import weetags.server.middlewares as mdlw
-from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp
+from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp
 from weetags.server.authentication import Authenticator, EngineURI
 
 class Weetags:
@@ -38,6 +38,7 @@ class Weetags:
         self.update_configs(configs)
         
         self.app.static("/static", file_or_directory="./weetags/server/static", directory_view=True)
+        self.app.blueprint(basebp)
         self.app.blueprint(nodesbp)
         self.app.blueprint(utilsbp)
         self.app.blueprint(auth)

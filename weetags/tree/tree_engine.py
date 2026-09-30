@@ -6,11 +6,13 @@ from functools import wraps
 
 
 
-from sqlalchemy import Table, create_engine, select, func, ColumnElement, TableValuedAlias
+from sqlalchemy import Subquery, Table, create_engine, select, func, ColumnElement, TableValuedAlias
+from sqlalchemy.sql import Subquery
 from sqlalchemy.engine import Engine as BaseEngine
 
-from typing import Any, Generator, Literal, Type
+from typing import Any, Generator, Literal, Sequence, Type
 
+from weetags.common.conditions import Condition, ConditionType, SqlFunction
 from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
@@ -214,31 +216,56 @@ class TreeEngine(BoundEngine):
         stmt = select(self.tree).select_from(*tables).where(*conditions)
         return self._serialize_records(stmt)
 
-    def nodes_relations(self, relation: BaseRelations, *conditions: ColumnElement) -> list[dict[str, Any]]:
-        ...
-
-    def search(self, value: Any, key: str = "name", fields: list[str] | None = None) -> list[dict[str, Any]]:
-        f = self._field_or_raise(self.tree, key)
-        stmt = select(*self._get_selected(fields)).where(f.ilike(f"%{value}%"))
-        return self._serialize_records(stmt)
-    
-
     @query_cache
-    def nodes_where(self, conditions: list, fields: list[str] | None = None, page: int = 0, page_size: int = 10) -> list[dict[str, Any]]:
-        if fields is None:
-            fields = []
+    def nodes_where(
+        self, 
+        relations: Sequence[Condition] | None = None,
+        conditions: Sequence[Condition] | None = None,
+        fields: list[str] | None = None, 
+        page: int = 0, 
+        page_size: int = 10
+    ) -> list[dict[str, Any]]:
+        fields = fields or []
+        r = self._parse_rel_conditions(relations)
+        t, q = self._parse_cmp_conditions(conditions)
         stmt = (
             QueryBuilder(self.tree, self.metadata)
             .select()
+            .select_from(*t)
             .fields_from_str(*fields)
-            .where_from_str(*conditions)
+            .where(*q, *r)
             .offset(page * page_size)
             .limit(page_size)
             .order_by(self.tree.c.path)
         )
-        print("here")
-        print(stmt())
         return self._serialize_records(stmt())
+
+    def closest(
+        self,
+        name: str,
+        relations: Sequence[Condition] | None = None,
+        conditions: Sequence[Condition] | None = None,
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        fields = fields or []
+        r = self._parse_rel_conditions(relations)
+        t, q = self._parse_cmp_conditions(conditions)
+        stmt = (
+            QueryBuilder(self.tree, self.metadata)
+            .select()
+            .select_from(*t)
+            .fields_from_str(*fields)
+            .where(*q, *r)
+        )
+
+        centroid = self._node_or_raise(name)
+        centroid_path = NodePath(centroid["path"])
+
+        nodes = self._serialize_records(stmt())
+        dists = self._distance(centroid_path, *[n["path"] for n in nodes])
+        closest_dist = min(dists)
+        indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
+        return [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
 
     @query_cache
     @topology_cache("parent")
@@ -313,20 +340,37 @@ class TreeEngine(BoundEngine):
     def distance(self, name: str, other_name: str) -> int:
         node = self._node_or_raise(name)
         other = self._node_or_raise(other_name)
+        dist = self._distance(node["path"], other["path"])
+        return dist[0]
+    
+    def _distance(self, path: str | NodePath, *other_paths: str | NodePath) -> list[int]:
+        def _dist(p: NodePath, commom_ancestor: str):
+            dist = 0
+            for n in p.nodes[::-1]:
+                if n != commom_ancestor:
+                    dist += 1
+                else:
+                    break
+            return dist
 
-        node_path = NodePath(node["path"])
-        other_path = NodePath(other["path"])
-        ancestor, ancestor_name = None, None
-        for ancestor_name in node_path.nodes[::-1]:
-            if ancestor_name in other_path.nodes:
-                ancestor = self._node(ancestor_name)
-                break
-        if ancestor is None:
-            raise KeyError("Unable to find a common ancestor")
-        assert ancestor_name is not None
-        
-        return node_path.distance(name, ancestor_name) + other_path.distance(other_name, ancestor_name)
+        dists, centroid_path = [], NodePath(path)
+        for i, other in enumerate(other_paths):
+            opath = NodePath(other)
 
+            j, commom_ancestor = opath.len - 1, None
+            while j >= 0:
+                inner_node = opath.nodes[j]
+                if inner_node in centroid_path.nodes:
+                    commom_ancestor = inner_node
+                    break
+                j -= 1
+            if commom_ancestor is None:
+                raise ValueError("Malformed tree")
+            
+            dist = _dist(centroid_path, commom_ancestor)
+            dist += _dist(opath, commom_ancestor)
+            dists.append(dist)
+        return dists
 
     def traversal(self, sub_tree: str | None = None, order: TraversalOrder = "pre") -> Generator[dict[str, Any]]:
         base = sub_tree or self.root()["name"]
@@ -531,3 +575,79 @@ class TreeEngine(BoundEngine):
         children = node.get("children", [])
         for child in children:
             self._update_subtree_path(child, path)
+
+    def _relation_as_subquery(self, relation: BaseRelations, value: str) -> Subquery:
+        match relation:
+            case "ancestors":
+                paths = self.subtree_topology(value)
+                names = NodePathCollection(*paths).ancestors_of(value)
+                q = select(self.tree.c.id).where(self.tree.c.name.in_(names)).subquery()
+            case "descendants":
+                paths = self.subtree_topology(value)
+                names = NodePathCollection(*paths).descendants_of(value)
+                q = select(self.tree.c.id).where(self.tree.c.name.in_(names)).subquery()
+            case "branch":
+                paths = self.subtree_topology(value)
+                names = NodePathCollection(*paths).branch_of(value)
+                q = select(self.tree.c.id).where(self.tree.c.name.in_(names)).subquery()
+            case "children":
+                node = self._node_or_raise(value)
+                names = node.get("children",  [])
+                q = select(self.tree.c.id).where(self.tree.c.name.in_(names)).subquery()
+            case "parent":
+                node = self._node_or_raise(value)        
+                names = node.get("parent", None)
+                if names is None:
+                    raise ValueError(f"No parent for node: {value}")
+                q = select(self.tree.c.id).where(self.tree.c.name.in_([names])).subquery()
+            case "siblings":
+                parent = self.parent_node(value)
+                if parent is None:
+                    raise ValueError(f"No parent for node: {value}") 
+                parent_name = parent["name"]
+                parent_node = self._node_or_raise(parent_name)
+                names = [name for name in parent_node.get("children", []) != value]
+                q = select(self.tree.c.id).where(self.tree.c.name.in_([names])).subquery()
+            case _:
+                raise ValueError("???")
+        return q
+
+    def _parse_rel_conditions(self, relations: Sequence[Condition] | None) -> Sequence[ColumnElement]:
+        if relations is None:
+            return []
+        rel = []
+        for r in relations:
+            subquery = self._relation_as_subquery(**r.as_dict())
+            rel.append(self.tree.c.id.in_(subquery)) # pyright: ignore
+        return rel
+
+    def _apply_operator(self, fname: str, operator: str, value: Any) -> ColumnElement:
+        c = self._field_or_raise(self.tree, fname)
+        e = getattr(c, operator)
+        return e(value)
+
+    def _apply_f_operator(self, func: SqlFunction, func_args: Sequence[Any], operator: str, value: Any) -> tuple[Table, ColumnElement]:
+        f = func.to_callable()
+        fname, *args = func_args
+        c = self._field_or_raise(self.tree, fname)
+        t = f(c, *args).table_valued('value', joins_implicitly=True)
+        e = getattr(t.c.value, operator)
+        return (t, e(value))
+
+    def _parse_cmp_conditions(self, conditions: Sequence[Condition] | None) -> tuple[Sequence[Table], Sequence[ColumnElement]]:
+        t, e = [], []
+        if conditions is None:
+            return (t, e)
+        for condition in conditions:
+            match condition.type:
+                case ConditionType.OPERATION:
+                    payload = condition.as_dict()
+                    e.append(self._apply_operator(**payload))
+                case ConditionType.FSQL_OPERATION:
+                    payload = condition.as_dict()
+                    subt, expr = self._apply_f_operator(**payload)
+                    t.append(subt)
+                    e.append(expr)
+                case _:
+                    raise ValueError()
+        return (t, e)

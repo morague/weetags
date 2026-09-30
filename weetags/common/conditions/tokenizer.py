@@ -7,7 +7,7 @@ from enum import Enum
 from collections import deque
 from sqlalchemy import func, Table, Column, ColumnElement, TableValuedAlias
 from attrs import define, field
-from typing import Any, Callable, Iterable, Generator
+from typing import Any, Callable, Iterable, Generator, Sequence
 
 from weetags.common.utils import OP
 
@@ -20,7 +20,9 @@ DATETIME_PATTERN = re.compile("")
 
 
 def parse(value: Any) -> Any:
-    if value.isnumeric():
+    if value is None:
+        return None
+    elif value.isnumeric():
         return int(value)
     elif bool(re.search(BOOL0_PATTERN, value)):
         return False
@@ -45,6 +47,13 @@ class SqlFunction(str, Enum):
             if e.value == value:
                 return e
         return None
+
+    @classmethod
+    def from_value_or_raise(cls, value: str) -> SqlFunction:
+        e = cls.from_value(value)
+        if e is None:
+            raise ValueError(f"Unknown sql function: {value}")
+        return e
 
     def to_callable(self) -> Callable:
         f = getattr(func, self.value, None)
@@ -78,11 +87,6 @@ class CToken(ABC):
     value: Any
 
 @define
-class SeperatorToken(CToken):
-    token: Token = field()
-    value: Any = field()
-
-@define
 class ValuedToken(CToken):
     token: Token = field()
     value: Any = field()
@@ -101,14 +105,36 @@ class ValuedToken(CToken):
 
 
 
+class ArgsSequence:
+    sequence: Sequence[Token] = [Token.ARG, Token.COMMA]
+    min_args: int = 0
+    max_args: int = 10
 
+    def __init__(self, min_args: int = 1, max_args: int = 10) -> None:
+        self.min_args = min_args
+        self.max_args = max_args
+
+    def is_valid(self, sequence: Sequence[ValuedToken]) -> bool:
+        valid = False
+
+        args = [t.token for t in sequence if t.token == Token.ARG]
+        if len(args) < self.min_args or len(args) > self.max_args:
+            return valid
+
+        for i in range(len(sequence)):
+            token = sequence[i]
+            if i % 2 == 0 and token.token != Token.ARG:
+                return False
+            if i % 2 != 0 and token.token != Token.COMMA:
+                return False
+        return True
 
 
 class Tokenizer:
     def __init__(self) -> None:
         pass
 
-    def tokenize(self, value: str) -> list[CToken]:
+    def tokenize(self, value: str) -> list[ValuedToken]:
         size = Token.longest_expr()
         tokens, buffer, SKIP = [], "", 0
         for w in self.sliding_window(value, size=size):
@@ -122,7 +148,7 @@ class Tokenizer:
                     if len(buffer) > 0:
                         tokens.append(self.valued_token(buffer))
                         buffer = ""
-                    tokens.append(SeperatorToken(token, None))
+                    tokens.append(ValuedToken(token, None))
                     SKIP += len(token.value) - 1
                 case None:
                     buffer += w[0]

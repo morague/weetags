@@ -1,11 +1,13 @@
 from __future__ import annotations
+from typing import get_args
 
 
 from pydantic import Json
-from sanic import Blueprint, HTTPResponse, Request, json, redirect, html
+from sanic import Blueprint, HTTPResponse, Request, json, redirect, html, empty
 from sanic.response import JSONResponse, ResponseStream, HTTPResponse
 from sanic_ext import render
 
+from weetags.common.types import BaseRelations
 from weetags.common.utils import OP, SQLF
 from weetags.tree.tree_engine import TreeEngine
 from weetags.tree.tree import Tree
@@ -53,12 +55,16 @@ args:
     limit (int)
     offset (int)
 """
-
+basebp = Blueprint("base", "/")
 weetagsbp = Blueprint("weetags", "/", version="v1")
 auth = Blueprint("auth", "/", version="v1")
 nodesbp = Blueprint("nodes", "/", version="v1")
 utilsbp = Blueprint("utils", "/", version="v1")
 explorerbp = Blueprint("explorer", "/", version="v1")
+
+@basebp.route("/favicon.ico", methods=["GET"])
+async def favicon(request: Request) -> HTTPResponse:
+    return empty()
 
 @auth.route("/auth", methods=["POST"])
 @arg.parser(arg.AuthArguments)
@@ -111,8 +117,8 @@ async def root(request: Request, arguments: arg.RootArguments) -> JSONResponse:
 @arg.parser(arg.NodesArguments)
 async def nodes(request: Request, arguments: arg.NodesArguments) -> JSONResponse:
     engine: TreeEngine = get_engine(request, arguments)
-    if arguments.q is not None:
-        data = engine.nodes_where(arguments.q, arguments.fields, arguments.page, arguments.page_size)
+    if any([arguments.q, arguments.r]):
+        data = engine.nodes_where(arguments.r, arguments.q, arguments.fields, arguments.page, arguments.page_size)
     else:
         data = engine._non_ordered_walk(arguments.fields, arguments.page, arguments.page_size)
     return json({"status_code": 200, "reasons": "OK", "data": data})
@@ -123,6 +129,14 @@ async def get_node(request: Request, arguments: arg.NodeArguments) -> JSONRespon
     engine: TreeEngine = get_engine(request, arguments)
     node = engine._node(arguments.node_name, arguments.fields)
     return json({"status_code": 200, "reasons": "OK", "data": node})
+
+@nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>/closest", methods=["GET"])
+@arg.parser(arg.ClosestNodesArguments)
+async def closest(request: Request, arguments: arg.ClosestNodesArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    nodes = engine.closest(arguments.node_name, arguments.r, arguments.q, arguments.fields)
+    return json({"status_code": 200, "reasons": "OK", "data": nodes})
+
 
 @nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>/<relation:(parent|children|branch)>", methods=["GET"])
 @arg.parser(arg.RelationArguments)
@@ -224,7 +238,8 @@ async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPRe
         "page_size": arguments.page_size,
         "fields": engine._topology.columns.keys() + [f for f in engine._metadata.columns.keys() if f != "id"],
         "operators": list(OP.keys()),
-        "sql_functions": list(SQLF.keys())
+        "sql_functions": list(SQLF.keys()),
+        "relations": get_args(BaseRelations.__value__)
     }
     return await render("explorer.html", context= context)
 

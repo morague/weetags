@@ -1,40 +1,17 @@
 from __future__ import annotations
 
-from attrs import define, field
-from sqlalchemy import column, func, Table, Column, ColumnElement
+import json
+from functools import partial
+from abc import ABC, abstractmethod
+from attrs import define, field, Attribute, validators, asdict
+from enum import Enum, auto
+from typing import Sequence, Any, Type, get_args
 
-from typing import Any, Sequence
+
 
 from weetags.common.utils import OP
-from weetags.common.conditions.tokenizer import CToken, Token, SqlFunction
-
-
-
-
-class ArgsSequence:
-    sequence: list[Token] = [Token.ARG, Token.COMMA]
-    min_args: int = 0
-    max_args: int = 10
-
-    def __init__(self, min_args: int = 1, max_args: int = 10) -> None:
-        self.min_args = min_args
-        self.max_args = max_args
-
-    def is_valid(self, sequence: list[CToken]) -> bool:
-        valid = False
-
-        args = [t.token for t in sequence if t.token == Token.ARG]
-        if len(args) < self.min_args or len(args) > self.max_args:
-            return valid
-
-        for i in range(len(sequence)):
-            token = sequence[i]
-            if i % 2 == 0 and token.token != Token.ARG:
-                return False
-            if i % 2 != 0 and token.token != Token.COMMA:
-                return False
-        return True
-
+from weetags.common.types import BaseRelations
+from weetags.common.conditions.tokenizer import Tokenizer, Token, ValuedToken, ArgsSequence, SqlFunction, parse
 
 ACCEPTABLE_LEFT = [
     [Token.CALLABLE, Token.COLON, ArgsSequence(min_args=1, max_args=2)],
@@ -42,11 +19,31 @@ ACCEPTABLE_LEFT = [
 ]
 
 ACCEPTABLE_RIGHT = [
-    [Token.OPERATOR, Token.COLON, Token.ARG]
+    [Token.OPERATOR, Token.COLON, ArgsSequence(min_args=1, max_args=100)]
 ]
 
+ACCEPTABLE_REL = [
+    [Token.ARG, Token.COLON, Token.ARG]
+]
 
-def test_condition_side(sequence: list[CToken], acceptables: list[list[Token]]) -> bool:
+def convert_conditions(value: Sequence[Any] | None, expr_handler: Type[ConditionExpr | RelationExpr]) -> list[Condition] | None:
+    if value is None:
+        return
+
+    values = []
+    tokenizer = Tokenizer()
+    for condition in value:
+        if isinstance(condition, str):
+            tokens = tokenizer.tokenize(condition)
+            expr = expr_handler(condition, tokens)
+            c = Condition.from_expr(expr)
+            values.append(c)
+        elif isinstance(condition, dict):
+            c = Condition.from_block(condition)
+            values.append(c)
+    return values
+
+def test_condition_side(sequence: Sequence[ValuedToken], acceptables: list[list[Token]]) -> bool:
     """could be improved for ArgsSequence handling, but sufficient as long as the argsequence is at the end of a side."""
     accept = []
     for acceptable in acceptables:
@@ -65,23 +62,109 @@ def test_condition_side(sequence: list[CToken], acceptables: list[list[Token]]) 
         accept.append(all(valid))
     return any(accept)
 
-def get_column(table: Table, field: str) -> Column:
-    column = table.c.get(field)
-    if column is None:
-        raise ValueError(f"Unknown column: {field}")
-    return column
+def validate_relation(instance: Type, attribute: Attribute, value: Any) -> None:
+    relations = get_args(BaseRelations.__value__)
+    if value not in relations:
+        raise ValueError(f"Unknown relation: {value}")
 
+def convert_operator_symbol(value: str) -> str:
+    if value in OP.values():
+        return value
+    op = OP.get(value, None)
+    if op is None:
+        raise KeyError(f"Unknown operator name: {value}")
+    return op
+
+def convert_func_args(value: Sequence[Any]) -> Sequence[Any]:
+    return [parse(v) for v in value]
+
+class ConditionType(Enum):
+    RELATION = auto()
+    OPERATION = auto()
+    FSQL_OPERATION = auto()
+
+
+class CPayload(ABC):
+    ...
 
 @define
-class ConditionExpr:
-    raw: str = field()
-    tokens: list[CToken] = field()
+class SqlFPayload(CPayload):
+    func: SqlFunction = field(converter=SqlFunction.from_value_or_raise)
+    func_args: Sequence[Any] = field(converter=convert_func_args)
+    operator: str = field(converter=convert_operator_symbol)
+    value: Any = field(converter=parse)
+
+@define
+class CMPPayload(CPayload):
+    fname: str = field(validator=[validators.instance_of(str)])
+    operator: str = field(converter=convert_operator_symbol)
+    value: Any = field(converter=parse)
+
+@define
+class RelPayload(CPayload):
+    relation: str = field(validator=[validate_relation])
+    value: Any = field(converter=parse)
+
+@define(repr=False)
+class Condition:
+    payload: CPayload = field()
+    type: ConditionType = field()
+    expr: Expr | None = field(default=None)
 
     def __repr__(self) -> str:
-        return self.raw
+        return json.dumps(self.as_dict())
+    
+    @classmethod
+    def from_expr(cls, expr: Expr) -> Condition:
+        return cls(expr.as_payload(), expr.type, expr)
+
+    @classmethod
+    def from_block(cls, payload: dict[str, Any]) -> Condition:
+        ctype = cls._define_type(payload)
+        match ctype:
+            case ConditionType.FSQL_OPERATION:
+                p = SqlFPayload(**payload)
+            case ConditionType.OPERATION:
+                p = CMPPayload(**payload)
+            case ConditionType.RELATION:
+                p = RelPayload(**payload)
+        return cls(p, ctype)
+
+    @staticmethod
+    def _define_type(payload: dict[str, Any]) -> ConditionType:
+        if payload.get("relation") is not None:
+            return ConditionType.RELATION
+        elif payload.get("func") is not None:
+            return ConditionType.FSQL_OPERATION
+        elif payload.get("fname") is not None:
+            return ConditionType.OPERATION
+        else:
+            raise ValueError("???")
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self.payload)
+
+
+class Expr(ABC):
+    raw: str
+    tokens: Sequence[ValuedToken]
+    type: ConditionType
+
+    @property
+    def _t(self) -> Sequence[Token]:
+        return [t.token for t in self.tokens]
+
+    @abstractmethod
+    def as_payload(self) -> CPayload:
+        raise NotImplementedError()
+
+@define
+class ConditionExpr(Expr):
+    raw: str = field()
+    tokens: Sequence[ValuedToken] = field()
+    type: ConditionType = field(init=False)
 
     def __attrs_post_init__(self) -> None:
-        """control expr"""
         l = test_condition_side(self.left, ACCEPTABLE_LEFT)
         r = test_condition_side(self.right, ACCEPTABLE_RIGHT)
         if not all([l, r]):
@@ -89,130 +172,91 @@ class ConditionExpr:
                 "Non valid condition format.",
                 "accepted formats: `field_name`->`operator`:`value` or `function_name`:`argument`,...->`operator`:`value`"
             )
+                
+        match len(self.left):
+            case 1:
+                self.type = ConditionType.OPERATION
+            case _:
+                self.type = ConditionType.FSQL_OPERATION
 
     @property
-    def left_type(self) -> str:
-        size = len(self.left)
-        if size == 1:
-            return "field_name"
-        else:
-            return "anon_table"
-
-    @property
-    def _t(self) -> list[Token]:
-        return [t.token for t in self.tokens]
-
-    @property
-    def left(self) -> list[CToken]:
+    def left(self) -> Sequence[ValuedToken]:
         index = self._t.index(Token.ARROW)
         return self.tokens[:index]
 
     @property
-    def right(self) -> list[CToken]:
+    def right(self) -> Sequence[ValuedToken]:
         index = self._t.index(Token.ARROW) + 1
         return self.tokens[index:]
 
-    def build(self, table: Table) -> tuple[Table | None, ColumnElement]:
-        match self.left_type:
-            case "field_name":
-                t,e = self._column_operation(table)
-            case "anon_table":
-                t,e = self._f_column_operation(table)
+    @property
+    def func(self) -> SqlFunction:
+        if self.type != ConditionType.FSQL_OPERATION:
+            raise TypeError("FSQL")
+        return self.left[0].value
+
+    @property
+    def func_args(self) -> Sequence[Any]:
+        if self.type != ConditionType.FSQL_OPERATION:
+            raise TypeError("FSQL")
+        return [t.value for t in self.left[1:] if t.token == Token.ARG]
+
+    @property
+    def cmp_field(self) -> str:
+        match self.type:
+            case ConditionType.OPERATION:
+                fname = self.left[0].value
+            case ConditionType.FSQL_OPERATION:
+                fname = self.left[2].value
             case _:
                 raise ValueError("???")
-        return (t, e)
-    
-    def _column_operation(self, table: Table) -> tuple[None, ColumnElement]:
-        fname, *_ = [t for t in self.left if t.token == Token.ARG]
-        column = get_column(table, fname.value)
-        e = self._apply_operator(column)
-        return (None, e)
+        assert isinstance(fname, str)
+        return fname
 
-    def _f_column_operation(self, table: Table) -> tuple[Table, ColumnElement]:   
-        anon_table = self._set_anon_table(table)     
-        e = self._apply_operator(anon_table.c.value)
-        return (anon_table, e)
+    @property
+    def operator_symbol(self) -> str:
+        return self.right[0].value
 
+    @property
+    def cmp_value(self) -> Any:
+        values = [t.value for t in self.right[1:] if t.token == Token.ARG]
+        if len(values) == 1:
+            values = values[0]
+        return values
 
-    def _apply_operator(self, left: Column) -> ColumnElement:
-        operator_name = self.right[0]
-        value = self.right[-1]
-
-        operator = getattr(left, operator_name.value)
-        return operator(value.value)
-
-    def _set_anon_table(self, table: Table) -> Table:
-        func_name = self.left[0] 
-        fname, *args = [t for t in self.left if t.token == Token.ARG]
-
-        column = get_column(table, fname.value)
-        valued_args = [a.value for a in args]
-        f = func_name.value.to_callable()
-        return f(column, *valued_args).table_valued('value', joins_implicitly=True)
-
+    def as_payload(self) -> CPayload:
+        match self.type:
+            case ConditionType.OPERATION:
+                payload = CMPPayload(self.cmp_field, self.operator_symbol, self.cmp_value)
+            case ConditionType.FSQL_OPERATION:
+                payload = SqlFPayload(self.func, self.func_args, self.operator_symbol, self.cmp_value)
+            case _:
+                raise ValueError()            
+        return payload
 
 @define
-class ConditionBlock:
-    block: Sequence[Any] = field()
+class RelationExpr(Expr):
+    raw: str = field()
+    tokens: Sequence[ValuedToken] = field()
+    type: ConditionType = ConditionType.RELATION
+
+    def __attrs_post_init__(self) -> None:
+        if self.relation not in get_args(BaseRelations.__value__):
+            raise ValueError(f"Unknown relation: {self.relation}")
+        valid = test_condition_side(self.tokens, ACCEPTABLE_REL)
+        if valid is False:
+            raise ValueError("invalid token sequence. accepable token sequence: `relation`:`node_name` ")
+        
+    @property
+    def relation(self) -> str:
+        return self.tokens[0].value
 
     @property
-    def left(self) -> tuple[Any, ...]:
-        return tuple(self.block[:-2])
+    def cmp_value(self) -> str:
+        return self.tokens[-1].value        
 
-    @property
-    def right(self) -> tuple[Any, ...]:
-        return tuple(self.block[-2:])
+    def as_payload(self) -> RelPayload:
+        return RelPayload(self.relation, self.cmp_value)
 
-    @property
-    def size(self) -> int:
-        return len(self.block)
-
-    @property 
-    def left_type(self) -> str:
-        if self.size == 3:
-            return "field_name"
-        if self.size >= 4:
-            return "anon_table"
-        else:
-            raise ValueError("???")
-
-    def build(self, table: Table) -> tuple[Table | None, ColumnElement]:
-        match self.left_type:
-            case "field_name":
-                t,e = self._column_operation(table)
-            case "anon_table":
-                t,e = self._f_column_operation(table)
-            case _:
-                raise ValueError("???")
-        return (t, e)
-
-    def _column_operation(self, table: Table) -> tuple[None, ColumnElement]:
-        fname = self.left[0]
-        column = get_column(table, fname)
-        e = self._apply_operator(column)
-        return (None, e)
-
-    def _f_column_operation(self, table: Table) -> tuple[Table, ColumnElement]:   
-        func = SqlFunction.from_value(self.left[0])
-        if func is None:
-            raise KeyError(f"Unknown sql function: {self.left[0]}")
-
-        fname, *args = self.left[1:]
-        args = [arg for arg in args if arg != None]
-        column = get_column(table, fname)
-        f = func.to_callable()
-
-        anon_table = f(column, *args).table_valued('value', joins_implicitly=True)
-        e = self._apply_operator(anon_table.c.value)
-        return (anon_table, e)
-
-
-    def _apply_operator(self, left: Column) -> ColumnElement:
-        operator_name = self.right[0]
-        value = self.right[-1]
-
-        callable_name = OP.get(operator_name, None)
-        if callable_name is None:
-            raise KeyError(f"Unknown operator: {operator_name}") 
-        operator = getattr(left, callable_name)
-        return operator(value)
+convert_cmp_conditions = partial(convert_conditions, expr_handler=ConditionExpr)
+convert_rel_conditions = partial(convert_conditions, expr_handler=RelationExpr)

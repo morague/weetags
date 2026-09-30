@@ -166,7 +166,9 @@
                             <div class="dropdown-content">
                                 <a class="dropdown-item" onclick="add_filter(this)"> <strong>Filter</strong>  </a>
                                 <hr class="dropdown-divider" />
-                                <a class="dropdown-item" onclick="add_f_filter(this)"> <strong>Funtionnal Filter</strong> </a>
+                                <a class="dropdown-item" onclick="add_f_filter(this)"> <strong>Funtional Filter</strong> </a>
+                                <hr class="dropdown-divider" />
+                                <a class="dropdown-item" onclick="add_r_filter(this)"> <strong>Relation</strong> </a>
                             </div>
                         </div>
                     </div>
@@ -231,6 +233,7 @@
         let fields = JSON.parse('{{fields|tojson}}');
         let operators = JSON.parse('{{operators|tojson}}');
         let sql_functions = JSON.parse('{{sql_functions|tojson}}');
+        let relations = JSON.parse('{{relations|tojson}}');
     </script>
     <script type="text/javascript" src="/static/js/explorer.js"></script>
 
