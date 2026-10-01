@@ -238,9 +238,6 @@ class Tree:
     def nodes(self, *conditions: ColumnElement | Relation):
         return self._engine.nodes(*conditions)
 
-    def closest(self):
-        raise NotImplementedError()
-
     def parent_node(self, name: str) -> Node | None:
         """return parent node of a given node name"""
         return self._into_node(self._engine.parent_node(name))
