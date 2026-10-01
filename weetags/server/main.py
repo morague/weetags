@@ -14,7 +14,7 @@ from weetags.common.loaders import ConfigLoader, YamlLoader, Loader
 from weetags.common.configs import TreeConfig
 import weetags.server.listeners as lstn
 import weetags.server.middlewares as mdlw
-from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp
+from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp, topologybp
 from weetags.server.authentication import Authenticator, EngineURI
 
 class Weetags:
@@ -43,6 +43,7 @@ class Weetags:
         self.app.blueprint(utilsbp)
         self.app.blueprint(auth)
         self.app.blueprint(explorerbp)
+        self.app.blueprint(topologybp)
         self.app.on_request(mdlw.go_fast, priority=10)
         self.app.on_request(mdlw.authorize, priority=9)
         self.app.on_response(mdlw.log_exit, priority=10)

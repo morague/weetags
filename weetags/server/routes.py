@@ -1,11 +1,14 @@
 from __future__ import annotations
-from typing import get_args
 
-
-from pydantic import Json
+import json as serde
+from re import A
+import tempfile
+from click.core import F
 from sanic import Blueprint, HTTPResponse, Request, json, redirect, html, empty
-from sanic.response import JSONResponse, ResponseStream, HTTPResponse
+from sanic.response import JSONResponse, ResponseStream, HTTPResponse, file_stream
 from sanic_ext import render
+
+from typing import get_args
 
 from weetags.common.types import BaseRelations
 from weetags.common.utils import OP, SQLF
@@ -45,15 +48,53 @@ from weetags.server.authentication import Authenticator
     /permissions
 
 
+    
+blueprint:
+    topology
+        add (name, parent, metadata)
+        graft (nodes, keymap, on_colision)
+        import (path, keymap, on_colision)
+        export (outfile, subtree, order)
 
-args:
-    tree_name (str)
-    name (str)
-    fields= tree.fields
-    relations: (str) Relation
-    conditions=
-    limit (int)
-    offset (int)
+        remove (name, force)
+        prune (name)
+        move (name)
+
+    metadata
+        update (= with conditions)
+        update/<node_name>
+
+        appendList
+        extendList
+        popList
+        setObjectKey
+        popObjectKey
+        objectAppendList
+        objectExtendList
+        objectPopList
+
+???
+/trees/<>/update/
+/trees/<>/update/<>
+/trees/<>/update/<>/appendList
+/trees/<>/update/<>/extendList
+/trees/<>/update/<>/popList
+...
+
+
+???
+PATCH /trees/<>/nodes
+PATCH /trees/<>/nodes/<>
+PATCH /trees/<>/nodes/<>/appendList
+PATCH /trees/<>/nodes/<>/extendList
+PATCH /trees/<>/nodes/<>/popList
+...
+GET /trees/<>/export (is utilsbp)
+PUT /trees/<>/import
+PUT /trees/<>/graft
+PUT /trees/<>/nodes/<>
+DELETE /trees/<>/prune
+DELETE /trees/<>/nodes/<>
 """
 basebp = Blueprint("base", "/")
 weetagsbp = Blueprint("weetags", "/", version="v1")
@@ -61,6 +102,10 @@ auth = Blueprint("auth", "/", version="v1")
 nodesbp = Blueprint("nodes", "/", version="v1")
 utilsbp = Blueprint("utils", "/", version="v1")
 explorerbp = Blueprint("explorer", "/", version="v1")
+
+topologybp = Blueprint("topology", "/", version="v1")
+metadatabp = Blueprint("metadata", "/", version="v1")
+alterationbp = Blueprint("alteration", "/", version="v1")
 
 @basebp.route("/favicon.ico", methods=["GET"])
 async def favicon(request: Request) -> HTTPResponse:
@@ -100,12 +145,6 @@ async def login(request: Request, arguments: arg.LoginArguments) -> HTTPResponse
     notif = generate_notification_payload(arguments.message, arguments.level)
     return await render("login.html", context={"notifications": notif})
 
-@nodesbp.route("trees/<tree_name:str>/search", methods=["GET"])
-@arg.parser(arg.NodesArguments)
-async def search(request: Request, arguments: arg.NodesArguments) -> JSONResponse:
-    engine: TreeEngine = get_engine(request, arguments)
-    return json({"status_code": 200, "reasons": "OK", "data": []})
-
 @nodesbp.route("trees/<tree_name:str>/root", methods=["GET"])
 @arg.parser(arg.RootArguments)
 async def root(request: Request, arguments: arg.RootArguments) -> JSONResponse:
@@ -137,7 +176,6 @@ async def closest(request: Request, arguments: arg.ClosestNodesArguments) -> JSO
     nodes = engine.closest(arguments.node_name, arguments.r, arguments.q, arguments.fields)
     return json({"status_code": 200, "reasons": "OK", "data": nodes})
 
-
 @nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>/<relation:(parent|children|branch)>", methods=["GET"])
 @arg.parser(arg.RelationArguments)
 async def get_node_relation1(request: Request, arguments: arg.RelationArguments) -> JSONResponse:
@@ -167,17 +205,6 @@ async def get_node_relation(request: Request, arguments: arg.Relation1Arguments)
         case _:
             raise ValueError(f"Unknown relation: {arguments.relation}")
     return json({"status_code": 200, "reasons": "OK", "data": data})
-
-
-
-
-
-
-
-
-
-
-
 
 @utilsbp.route("/trees/<tree_name:str>/infos", methods=["GET"])
 @arg.parser(arg.BaseTreeArguments)
@@ -227,6 +254,25 @@ async def get_field(request: Request, arguments: arg.Fieldrguments) -> JSONRespo
     data = engine._field(arguments.field_name, arguments.distinct)
     return json({"status_code": 200, "reasons": "OK", "data": data})
 
+@utilsbp.get("trees/<tree_name:str>/export")
+@arg.parser(arg.ExportArguments)
+async def export(request: Request, arguments: arg.ExportArguments) -> ResponseStream:
+    engine: TreeEngine = get_engine(request, arguments)
+    with tempfile.NamedTemporaryFile(prefix=f"{arguments.tree_name}_", suffix=".jl", delete=False) as fp:
+        for node in engine.traversal(arguments.subtree, "pre"):
+            payload = serde.dumps(node)
+            fp.write(f"{payload}\n".encode())
+        return await file_stream(
+            fp.name, 
+            chunk_size=1024, 
+            mime_type="application/jsonlines",
+            headers={
+                "Content-Disposition": f'Attachment; filename="{fp.name}"',
+                "Content-Type": "application/jsonlines",
+            }
+        )
+
+
 @explorerbp.route("trees/<tree_name:str>/explorer", methods=["GET"])
 @arg.parser(arg.ExplorerArguments)
 async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPResponse:
@@ -244,21 +290,115 @@ async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPRe
     return await render("explorer.html", context= context)
 
 
+@topologybp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["PUT"])
+@arg.parser(arg.AddNodeArguments)
+async def add(request: Request, arguments: arg.AddNodeArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.add_node(arguments.node_name, arguments.parent, arguments.metadata)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@topologybp.route("trees/<tree_name:str>/graft", methods=["PUT"])
+@arg.parser(arg.AddNodesArguments)
+async def graft(request: Request, arguments: arg.AddNodesArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.graft_nodes(arguments.nodes, arguments.keymap, arguments.on_collision)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+# @topologybp.route("trees/<tree_name:str>/import", methods=["POST"])
+# @arg.parser(arg.AddNodesArguments)
+# async def import_from_file(request: Request, arguments: arg.AddNodesArguments) -> JSONResponse:
+#     engine: TreeEngine = get_engine(request, arguments)
+#     engine.import_from_file(arguments.keymap, arguments.on_collision)
+#     return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@topologybp.route("trees/<tree_name:str>/nodes", methods=["DELETE"])
+@arg.parser(arg.RemoveNodesArguments)
+async def remove_where(request: Request, arguments: arg.RemoveNodesArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.remove_nodes_where(arguments.r, arguments.q, arguments.force)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@topologybp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["DELETE"])
+@arg.parser(arg.RemoveNodeArguments)
+async def remove(request: Request, arguments: arg.RemoveNodeArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.remove_node(arguments.node_name, arguments.force)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@topologybp.route("trees/<tree_name:str>/prune/<subtree:str>", methods=["DELETE"])
+@arg.parser(arg.PruneArguments)
+async def prune(request: Request, arguments: arg.PruneArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.prune_subtree(arguments.subtree)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@metadatabp.route("trees/<tree_name:str>/nodes", methods=["PATCH"])
+@arg.parser(arg.UpdateNodesArguments)
+async def update(request: Request, arguments: arg.UpdateNodesArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.update_nodes_where(arguments.values, arguments.r, arguments.q)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
+
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["PATCH"])
+@arg.parser(arg.UpdateNodeArguments)
+async def update_where(request: Request, arguments: arg.UpdateNodeArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.update_node(arguments.node_name, arguments.values)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
 
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/appendList", methods=["PATCH"])
+@arg.parser(arg.AppendListArguments)
+async def append_list(request: Request, arguments: arg.AppendListArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.append_list(arguments.node_name, arguments.key, arguments.value)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/extendList", methods=["PATCH"])
+@arg.parser(arg.ExtendListArguments)
+async def extend_list(request: Request, arguments: arg.ExtendListArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.extend_list(arguments.node_name, arguments.key, arguments.value)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/popList", methods=["PATCH"])
+@arg.parser(arg.PopListArguments)
+async def pop_list(request: Request, arguments: arg.PopListArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.pop_list(arguments.node_name, arguments.key, arguments.index)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/setObjectKey", methods=["PATCH"])
+@arg.parser(arg.SetObjectKeyArguments)
+async def set_object_key(request: Request, arguments: arg.SetObjectKeyArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.set_object_key(arguments.node_name, arguments.path, arguments.value)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/popObjectKey", methods=["PATCH"])
+@arg.parser(arg.PopObjectKeyArguments)
+async def pop_object_key(request: Request, arguments: arg.PopObjectKeyArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.pop_object_key(arguments.node_name, arguments.path)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
-@nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["DELETE"])
-async def delete_node(request: Request) -> JSONResponse:
-    return json({"status_code": 200, "reasons": "OK", "data": ["hello"]})
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/objectAppendList", methods=["PATCH"])
+@arg.parser(arg.SetObjectKeyArguments)
+async def append_object_list(request: Request, arguments: arg.SetObjectKeyArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.object_append_list(arguments.node_name, arguments.path, arguments.value)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
-@nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["POST"])
-async def add_node(request: Request) -> JSONResponse:
-    return json({"status_code": 200, "reasons": "OK", "data": ["hello"]})
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/objectExtendList", methods=["PATCH"])
+@arg.parser(arg.ExtendObjectKeyArguments)
+async def extend_object_list(request: Request, arguments: arg.ExtendObjectKeyArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.object_extend_list(arguments.node_name, arguments.path, arguments.value)
+    return json({"status_code": 200, "reasons": "OK", "data": []})
 
-@nodesbp.route("trees/<tree_name:str>/nodes/<node_name:str>", methods=["PATCH"])
-async def update_node(request: Request) -> JSONResponse:
-    return json({"status_code": 200, "reasons": "OK", "data": ["hello"]})
+@metadatabp.route("trees/<tree_name:str>/nodes/<node_name:str>/objectPopList", methods=["PATCH"])
+@arg.parser(arg.PopListObjectArguments)
+async def pop_object_list(request: Request, arguments: arg.PopListObjectArguments) -> JSONResponse:
+    engine: TreeEngine = get_engine(request, arguments)
+    engine.object_pop_list(arguments.node_name, arguments.path, arguments.index)
+    return json({"status_code": 200, "reasons": "OK", "data": []})

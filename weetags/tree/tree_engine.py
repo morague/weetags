@@ -6,7 +6,7 @@ from functools import wraps
 
 
 
-from sqlalchemy import Subquery, Table, create_engine, select, func, ColumnElement, TableValuedAlias
+from sqlalchemy import Subquery, Table, select, func, ColumnElement
 from sqlalchemy.sql import Subquery
 from sqlalchemy.engine import Engine as BaseEngine
 
@@ -263,9 +263,12 @@ class TreeEngine(BoundEngine):
 
         nodes = self._serialize_records(stmt())
         dists = self._distance(centroid_path, *[n["path"] for n in nodes])
-        closest_dist = min(dists)
-        indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
-        return [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
+        results = []
+        if len(dists) > 0:
+            closest_dist = min(dists)
+            indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
+            results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
+        return results
 
     @query_cache
     @topology_cache("parent")
@@ -425,6 +428,14 @@ class TreeEngine(BoundEngine):
         if parent is not None:
             self._add_child(parent, name)
 
+    def graft_nodes(
+        self, 
+        nodes: list[dict[str, Any]], 
+        keymap: dict[str, Any] | None = None, 
+        on_collision: OnCollision = "raise"
+    ) -> None:
+        Importer(self.name, self, batch_size=100).loads(nodes, keymap, on_collision)
+
     @clear_query_cache("all")
     def remove_node(self, name: str, force: bool = False) -> None:
         node = self._node_or_raise(name)
@@ -439,8 +450,22 @@ class TreeEngine(BoundEngine):
         self.delete_topology(node["id"])
 
     @clear_query_cache("all")
-    def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.name).where_from_str(*conditions)
+    def remove_nodes_where(
+        self, 
+        relations: Sequence[Condition] | None = None, 
+        conditions: Sequence[Condition] | None = None, 
+        force: bool = False
+    ) -> None:
+        r = self._parse_rel_conditions(relations)
+        t, q = self._parse_cmp_conditions(conditions)
+
+        stmt = (
+            QueryBuilder(self.tree, self.metadata)
+            .select()
+            .fields(self.tree.c.name)
+            .select_from(*t)
+            .where(*q, *r)
+        )
         names = self._serialize_list(stmt())
         [self.remove_node(name, force) for name in names]
 
@@ -455,8 +480,22 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], values)
 
     @clear_query_cache("all")
-    def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        stmt = QueryBuilder(self.tree, self.metadata).select().fields(self.tree.c.id).where_from_str(*conditions)
+    def update_nodes_where(
+        self,
+        values: dict[str, Any],
+        relations: Sequence[Condition] | None = None, 
+        conditions: Sequence[Condition] | None = None, 
+    ) -> None:
+        r = self._parse_rel_conditions(relations)
+        t, q = self._parse_cmp_conditions(conditions)
+
+        stmt = (
+            QueryBuilder(self.tree, self.metadata)
+            .select()
+            .fields(self.tree.c.id)
+            .select_from(*t)
+            .where(*q, *r)
+        )
         nids = self._serialize_list(stmt())
         self.update_metadata(nids, values)
 
@@ -555,6 +594,8 @@ class TreeEngine(BoundEngine):
     def object_pop_list(self, name: str, path: str, index: int) -> None:
         upt.JsonObjectPopList(self).apply(name, path, index)
 
+    def import_from_file(self, path: str | Path, keymap: dict[str, Any] | None = None, on_collision: OnCollision = "raise") -> None:
+        Importer(self.name, self, batch_size=100).load(path, keymap, on_collision)
 
     def export_to_file(self, outfile: str | Path, subtree: str | None = None, order: TraversalOrder = "pre") -> None:
         with open(outfile, "w+") as f:
@@ -629,6 +670,7 @@ class TreeEngine(BoundEngine):
     def _apply_f_operator(self, func: SqlFunction, func_args: Sequence[Any], operator: str, value: Any) -> tuple[Table, ColumnElement]:
         f = func.to_callable()
         fname, *args = func_args
+        args = [arg for arg in args if arg is not None] # remove None for for_each, however might not work long term
         c = self._field_or_raise(self.tree, fname)
         t = f(c, *args).table_valued('value', joins_implicitly=True)
         e = getattr(t.c.value, operator)

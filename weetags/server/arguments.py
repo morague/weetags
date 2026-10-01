@@ -75,6 +75,14 @@ def int_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, int) and value is not None:
         raise ValueError(f"Argument {attribute} is not of type[int|None]")
 
+def dict_or_none(instance: Type, attribute: Attribute, value: Any):
+    if not isinstance(value, dict) and value is not None:
+        raise ValueError(f"Argument {attribute} is not of type[int|None]")
+
+def is_colision(instance: Type, attribute: Attribute, value: Any):
+    if value not in get_args(ty.OnCollision.__value__):
+        raise ValueError(f"Argument {attribute} should be one of: {ty.OnCollision.__value__}")
+
 
 def validate_list_or_none(instance: Type, attribute: Attribute, value: Any):
     if value is None:
@@ -268,3 +276,131 @@ class AuthArguments(ArgumentParser):
         if c == "redirect":
             params["redirect"] = True
         return cls(**params)
+
+@define
+class AddNodeArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    parent: str = field(validator=validators.instance_of(str))
+    metadata: dict[str, Any] = field(validator=validators.instance_of(dict))
+
+@define
+class AddNodesArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    nodes: list[dict[str, Any]] = field(validator=validators.instance_of(list))
+    keymap: dict[str, Any] | None = field(default=None, validator=dict_or_none)
+    on_collision: ty.OnCollision = field(default="raise", validator=is_colision) # pyright: ignore
+
+@define
+class RemoveNodeArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    force: bool = field(default=False, converter=bool_converter, validator=validators.instance_of(bool))
+
+@define
+class RemoveNodesArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    q: Sequence[Condition] | None = field(default=None, converter=convert_cmp_conditions)
+    r: Sequence[Condition] | None = field(default=None, converter=convert_rel_conditions)
+    force: bool = field(default=False, converter=bool_converter, validator=validators.instance_of(bool))
+
+    @staticmethod
+    def query_args(request: Request) -> dict[str, Any]:
+        _map = defaultdict(list)
+        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+
+        args = {}
+        for k,v in _map.items():
+            if k in ["q", "r"]:
+                args.update({k:v})
+            elif len(v) > 1:
+                args.update({k:v})
+            else:
+                args.update({k:v[0]})
+        return args
+
+@define
+class PruneArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    subtree: str = field(validator=validators.instance_of(str))
+
+@define
+class ExportArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    subtree: str | None = field(default=None, validator=str_or_none)
+
+@define
+class UpdateNodesArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    values: dict[str, Any] = field(validator=validators.instance_of(dict))
+    q: Sequence[Condition] | None = field(default=None, converter=convert_cmp_conditions)
+    r: Sequence[Condition] | None = field(default=None, converter=convert_rel_conditions)
+
+    @staticmethod
+    def query_args(request: Request) -> dict[str, Any]:
+        _map = defaultdict(list)
+        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+
+        args = {}
+        for k,v in _map.items():
+            if k in ["q", "r"]:
+                args.update({k:v})
+            elif len(v) > 1:
+                args.update({k:v})
+            else:
+                args.update({k:v[0]})
+        return args
+
+@define
+class UpdateNodeArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    values: dict[str, Any] = field(validator=validators.instance_of(dict))
+
+@define
+class AppendListArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    key: str = field(validator=validators.instance_of(str))
+    value: Any = field()
+
+@define
+class ExtendListArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    key: str = field(validator=validators.instance_of(str))
+    value: list[Any] = field(validator=validators.instance_of(list))
+
+@define
+class PopListArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    key: str = field(validator=validators.instance_of(str))
+    index: int = field(validator=validators.instance_of(int))
+
+@define
+class SetObjectKeyArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    path: str = field(validator=validators.instance_of(str))
+    value: Any = field()
+
+@define
+class PopObjectKeyArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    path: str = field(validator=validators.instance_of(str))
+
+@define
+class ExtendObjectKeyArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    path: str = field(validator=validators.instance_of(str))
+    value: list[Any] = field(validator=validators.instance_of(list))
+
+@define
+class PopListObjectArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    node_name: str = field(validator=validators.instance_of(str))
+    path: str = field(validator=validators.instance_of(str))
+    index: int = field(validator=validators.instance_of(int))

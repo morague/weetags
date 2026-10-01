@@ -48,7 +48,8 @@ class TreeTopology:
         self._engine.remove_node(name, force)
 
     def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        self._engine.remove_nodes_where(conditions, force)
+        raise NotImplementedError()
+        # self._engine.remove_nodes_where(conditions, force)
 
     def prune_subtree(self, name: str) -> None:
         self._engine.prune_subtree(name)
@@ -65,7 +66,8 @@ class TreeMetadata:
         self._engine.update_node(name, values)
 
     def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        self._engine.update_nodes_where(conditions, values)
+        raise NotImplementedError()
+        # self._engine.update_nodes_where(conditions, values)
 
     def append_list(self, name: str, key: str, value: Any) -> None:
         self._engine.append_list(name, key, value)
@@ -226,8 +228,6 @@ class Tree:
     def width(self, level: int) -> int:
         return self._engine.width(level)
 
-    def search(self, substring: str) -> list[str]:
-        raise NotImplementedError()
 
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))
@@ -235,7 +235,7 @@ class Tree:
     def nodes(self, *conditions: ColumnElement):
         return self._engine.nodes(*conditions)
 
-    def nodes_relation(self, relation: Literal[""], *conditions: ColumnElement) -> list[Node]:
+    def closest(self):
         raise NotImplementedError()
 
     def parent_node(self, name: str) -> Node | None:
