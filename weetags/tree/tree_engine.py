@@ -311,6 +311,32 @@ class TreeEngine(BoundEngine):
             results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
         return results
 
+    def closest_nodes(self, name: str, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
+        tables, c, relations = [self.tree], [], []
+        for condition in conditions:
+            if isinstance(condition, Rel):
+                relations.append(condition.as_condition())
+            else:
+                t = getattr(condition, "t", None)
+                if t is not None and t not in tables:
+                    tables.append(t)
+                c.append(condition)
+
+        r = self._parse_rel_conditions(relations)
+        stmt = select(self.tree).select_from(*tables).where(*c, *r)
+        nodes = self._serialize_records(stmt)
+
+        centroid = self._node_or_raise(name)
+        centroid_path = NodePath(centroid["path"])
+
+        dists = self._distance(centroid_path, *[n["path"] for n in nodes])
+        results = []
+        if len(dists) > 0:
+            closest_dist = min(dists)
+            indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
+            results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
+        return results
+
     @query_cache
     @topology_cache("parent")
     def parent_node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:

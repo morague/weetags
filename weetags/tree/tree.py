@@ -264,6 +264,9 @@ class Tree:
     def branch_nodes(self, name: str) -> list[Node]:
         return self._into_nodes(self._engine.branch_nodes(name))
 
+    def closest(self, name: str, *conditions: ColumnElement | Relation) -> list[tuple[int, Node]]:
+        return [(v["distance"], self._into_node_or_raise(v["node"]))for v in self._engine.closest_nodes(name, *conditions)]
+
     def distance(self, name: str, other_name: str) -> int:
         return self._engine.distance(name, other_name)
 
@@ -287,6 +290,12 @@ class Tree:
         if data is None:
             return None
         return Node(**data)
+
+    def _into_node_or_raise(self, data: dict[str, Any] | None) -> Node:
+        node = self._into_node(data)
+        if node is None:
+            raise ValueError("Node is None")
+        return node
 
     def _into_nodes(self, data: list[dict[str, Any]]) -> list[Node]:
         return [Node(**d) for d in data]
