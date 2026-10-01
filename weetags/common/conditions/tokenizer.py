@@ -22,17 +22,25 @@ DATETIME_PATTERN = re.compile("")
 def parse(value: Any) -> Any:
     if value is None:
         return None
-    elif value.isnumeric():
-        return int(value)
-    elif bool(re.search(BOOL0_PATTERN, value)):
-        return False
-    elif bool(re.search(BOOL1_PATTERN, value)):
-        return True
-    elif bool(re.search(NONE_PATTERN, value)):
-        return None
+    elif isinstance(value, (list, tuple)):
+        return [parse(v) for v in value]
+    elif isinstance(value, (bool, int)):
+        return value
+    elif isinstance(value, str):
+        if len(value.split(",")) > 1:
+            return [parse(v) for v in value.split(",")]
+        elif value.isnumeric():
+            return int(value)
+        elif bool(re.search(BOOL0_PATTERN, value)):
+            return False
+        elif bool(re.search(BOOL1_PATTERN, value)):
+            return True
+        elif bool(re.search(NONE_PATTERN, value)):
+            return None
+        else:
+            return value
     else:
         return value
-
 
 
 
