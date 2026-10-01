@@ -183,6 +183,7 @@ class Tree:
             "name": self.name,
             "size": self.size,
             "depth": self.depth,
+            "degree": self.degree,
             "breadth": self.breadth,
             "topology": self.topology_fields_dtype,
             "metadata": self.metadata_fields_dtype,
@@ -230,7 +231,6 @@ class Tree:
 
     def width(self, level: int) -> int:
         return self._engine.width(level)
-
 
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))

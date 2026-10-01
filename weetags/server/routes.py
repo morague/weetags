@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json as serde
-from re import A
 import tempfile
-from click.core import F
+import json as serde
+from sanic_ext import render
 from sanic import Blueprint, HTTPResponse, Request, json, redirect, html, empty
 from sanic.response import JSONResponse, ResponseStream, HTTPResponse, file_stream
-from sanic_ext import render
 
 from typing import get_args
 
@@ -206,7 +204,13 @@ async def get_node_relation(request: Request, arguments: arg.Relation1Arguments)
             raise ValueError(f"Unknown relation: {arguments.relation}")
     return json({"status_code": 200, "reasons": "OK", "data": data})
 
-@utilsbp.route("/trees/<tree_name:str>/infos", methods=["GET"])
+@utilsbp.route("/trees", methods=["GET"])
+async def infos(request: Request) -> JSONResponse:
+    engines: dict[str, TreeEngine] = request.app.ctx.entities
+    data = {k:Tree(k, engine).infos for k,engine in engines.items()}
+    return json({"status_code": 200, "reasons": "OK", "data": data})
+
+@utilsbp.route("/trees/<tree_name:str>", methods=["GET"])
 @arg.parser(arg.BaseTreeArguments)
 async def get_infos(request: Request, arguments: arg.BaseTreeArguments) -> JSONResponse:
     engine: TreeEngine = get_engine(request, arguments)
