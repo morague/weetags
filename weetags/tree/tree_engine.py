@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from functools import wraps
+import re
 
 
 
@@ -18,6 +19,7 @@ from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
 import weetags.common.utils as cutils
 import weetags.common.serializer as serializers
+from weetags.tree.fields import Relation as Rel
 import weetags.tree.update as upt
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
@@ -207,14 +209,53 @@ class TreeEngine(BoundEngine):
     def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         return self._node(name)
 
-    def nodes(self, *conditions: ColumnElement) -> list[dict[str, Any]]:
-        tables, c = [self.tree], []
+    def nodes(self, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
+        tables, c, relations = [self.tree], [], []
         for condition in conditions:
-            t = getattr(condition, "t", None)
-            if t is not None and t not in tables:
-                tables.append(t)
-        stmt = select(self.tree).select_from(*tables).where(*conditions)
+            if isinstance(condition, Rel):
+                relations.append(condition.as_condition())
+            else:
+                t = getattr(condition, "t", None)
+                if t is not None and t not in tables:
+                    tables.append(t)
+                c.append(condition)
+
+        r = self._parse_rel_conditions(relations)
+        stmt = select(self.tree).select_from(*tables).where(*c, *r)
         return self._serialize_records(stmt)
+
+    def remove_nodes(self, *conditions: ColumnElement | Rel, force: bool = False) -> None:
+        tables, c, relations = [self.tree], [], []
+        for condition in conditions:
+            if isinstance(condition, Rel):
+                relations.append(condition.as_condition())
+            else:
+                t = getattr(condition, "t", None)
+                if t is not None and t not in tables:
+                    tables.append(t)
+                c.append(condition)
+
+        r = self._parse_rel_conditions(relations)
+        stmt = select(self.tree.c.name).select_from(*tables).where(*c, *r)
+        names =  self._serialize_list(stmt)
+        [self.remove_node(name, force) for name in names]
+
+    def update_nodes(self, *conditions: ColumnElement | Rel, values: dict[str, Any]) -> None:
+        tables, c, relations = [self.tree], [], []
+        for condition in conditions:
+            if isinstance(condition, Rel):
+                relations.append(condition.as_condition())
+            else:
+                t = getattr(condition, "t", None)
+                if t is not None and t not in tables:
+                    tables.append(t)
+                c.append(condition)
+
+        r = self._parse_rel_conditions(relations)
+        stmt = select(self.tree.c.id).select_from(*tables).where(*c, *r)
+        nids = self._serialize_list(stmt)
+        self.update_metadata(nids, values)
+
 
     @query_cache
     def nodes_where(

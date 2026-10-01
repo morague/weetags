@@ -5,16 +5,17 @@ from sqlalchemy import ColumnElement
 from typing import Any, Generator, Literal, Type
 
 from weetags.common import Engine, EngineURI
+from weetags.common.conditions import Condition
 from weetags.common.loaders import Loader, YamlLoader
 from weetags.common.configs import FieldType, TreeConfig
 from weetags.common.types import TraversalOrder, OnCollision
-from weetags.tree.tree_engine import TreeEngine
+from weetags.tree.tree_engine import Rel, TreeEngine
 from weetags.common.alteration import Alteration
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.drawer import DrawStyle, TreeDrawer
 from weetags.tree.importer import Importer
 from weetags.tree.node import Node
-from weetags.tree.fields import TreeFieldsCollection
+from weetags.tree.fields import TreeFieldsCollection, RelationsCollection, Relation
 
 
 class TreeAlteration(Alteration):
@@ -47,9 +48,8 @@ class TreeTopology:
     def remove_node(self, name: str, force: bool = False) -> None:
         self._engine.remove_node(name, force)
 
-    def remove_nodes_where(self, conditions: list, force: bool = False) -> None:
-        raise NotImplementedError()
-        # self._engine.remove_nodes_where(conditions, force)
+    def remove_nodes(self, *conditions: ColumnElement | Relation, force: bool = False) -> None:
+        self._engine.remove_nodes(*conditions, force=force)
 
     def prune_subtree(self, name: str) -> None:
         self._engine.prune_subtree(name)
@@ -65,9 +65,8 @@ class TreeMetadata:
     def update_node(self, name: str, values: dict[str, Any]) -> None:
         self._engine.update_node(name, values)
 
-    def update_nodes_where(self, conditions: list, values: dict[str, Any]) -> None:
-        raise NotImplementedError()
-        # self._engine.update_nodes_where(conditions, values)
+    def update_nodes(self, *conditions: ColumnElement | Relation, values: dict[str, Any]) -> None:
+        self._engine.update_nodes(*conditions, values=values)
 
     def append_list(self, name: str, key: str, value: Any) -> None:
         self._engine.append_list(name, key, value)
@@ -111,6 +110,10 @@ class Tree:
     
     def __repr__(self) -> str:
         return f"<Tree: {self.name}>"
+
+    @property
+    def r(self) -> RelationsCollection:
+        return RelationsCollection()
 
     @property
     def Alteration(self) -> Alteration:
@@ -232,7 +235,7 @@ class Tree:
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))
 
-    def nodes(self, *conditions: ColumnElement):
+    def nodes(self, *conditions: ColumnElement | Relation):
         return self._engine.nodes(*conditions)
 
     def closest(self):

@@ -9,15 +9,17 @@ from sqlalchemy.sql.base import _NoArg, SchemaEventTarget as SchemaEventTarget
 from sqlalchemy.sql.elements import KeyedColumnElement
 from inspect import signature
 
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Type
 
+from weetags.common.conditions import Condition
 
 
 def _tabled_operator(f):
     @wraps(f)
     def wrapped(instance, *args, **kwargs):
         result = f(instance, *args, **kwargs)
-        result.t = instance.t
+        t = getattr(instance, "t", None)
+        result.t = t
         return result
     return wrapped
 
@@ -45,10 +47,6 @@ class TreeField(Column):
             t = func.json_each(self, path).table_valued('value', joins_implicitly=True)
         return TreeField.from_column(t.c.value)
 
-
-
-    
-
 class TreeFieldsCollection(dict):
     def __init__(self, map: dict[str, Any]) -> None:
         super().__init__(**map)
@@ -60,3 +58,40 @@ class TreeFieldsCollection(dict):
     def from_table(cls, table: Table) -> TreeFieldsCollection:
         return cls({k:TreeField.from_column(c) for k,c in table.c.items()})
 
+
+class Relation:
+    relation: str
+    name: str
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.relation = self.__class__.__name__.lower()
+
+    def as_condition(self) -> Condition:
+        return Condition.from_block({"relation": self.relation, "value": self.name})
+
+class Branch(Relation):
+    ...
+
+class Ancestors(Relation):
+    ...
+
+class Descendants(Relation):
+    ...
+
+class Children(Relation):
+    ...
+
+class Parent(Relation):
+    ...
+
+class Siblings(Relation):
+    ...
+
+class RelationsCollection(object):
+    Branch: Type[Branch] = Branch
+    Ancestors: Type[Ancestors] = Ancestors
+    Descendants: Type[Descendants] = Descendants
+    Children: Type[Children] = Children
+    Parent: Type[Parent] = Parent
+    Siblings: Type[Siblings] = Siblings
