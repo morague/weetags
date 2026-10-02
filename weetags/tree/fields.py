@@ -67,6 +67,9 @@ class Relation:
         self.name = name
         self.relation = self.__class__.__name__.lower()
 
+    def __repr__(self) -> str:
+        return self.as_condition().__repr__()
+
     def as_condition(self) -> Condition:
         return Condition.from_block({"relation": self.relation, "value": self.name})
 

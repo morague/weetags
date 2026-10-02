@@ -209,53 +209,12 @@ class TreeEngine(BoundEngine):
     def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         return self._node(name)
 
+    @query_cache
     def nodes(self, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
-        tables, c, relations = [self.tree], [], []
-        for condition in conditions:
-            if isinstance(condition, Rel):
-                relations.append(condition.as_condition())
-            else:
-                t = getattr(condition, "t", None)
-                if t is not None and t not in tables:
-                    tables.append(t)
-                c.append(condition)
-
-        r = self._parse_rel_conditions(relations)
-        stmt = select(self.tree).select_from(*tables).where(*c, *r)
+        """Used from Tree __class__"""
+        tables, c = self._parse_framework_conditions(*conditions)
+        stmt = select(self.tree).select_from(*tables).where(*c)
         return self._serialize_records(stmt)
-
-    def remove_nodes(self, *conditions: ColumnElement | Rel, force: bool = False) -> None:
-        tables, c, relations = [self.tree], [], []
-        for condition in conditions:
-            if isinstance(condition, Rel):
-                relations.append(condition.as_condition())
-            else:
-                t = getattr(condition, "t", None)
-                if t is not None and t not in tables:
-                    tables.append(t)
-                c.append(condition)
-
-        r = self._parse_rel_conditions(relations)
-        stmt = select(self.tree.c.name).select_from(*tables).where(*c, *r)
-        names =  self._serialize_list(stmt)
-        [self.remove_node(name, force) for name in names]
-
-    def update_nodes(self, *conditions: ColumnElement | Rel, values: dict[str, Any]) -> None:
-        tables, c, relations = [self.tree], [], []
-        for condition in conditions:
-            if isinstance(condition, Rel):
-                relations.append(condition.as_condition())
-            else:
-                t = getattr(condition, "t", None)
-                if t is not None and t not in tables:
-                    tables.append(t)
-                c.append(condition)
-
-        r = self._parse_rel_conditions(relations)
-        stmt = select(self.tree.c.id).select_from(*tables).where(*c, *r)
-        nids = self._serialize_list(stmt)
-        self.update_metadata(nids, values)
-
 
     @query_cache
     def nodes_where(
@@ -266,6 +225,7 @@ class TreeEngine(BoundEngine):
         page: int = 0, 
         page_size: int = 10
     ) -> list[dict[str, Any]]:
+        """Used from server parsed conditions"""
         fields = fields or []
         r = self._parse_rel_conditions(relations)
         t, q = self._parse_cmp_conditions(conditions)
@@ -281,6 +241,7 @@ class TreeEngine(BoundEngine):
         )
         return self._serialize_records(stmt())
 
+    @query_cache
     def closest(
         self,
         name: str,
@@ -299,43 +260,15 @@ class TreeEngine(BoundEngine):
             .where(*q, *r)
         )
 
-        centroid = self._node_or_raise(name)
-        centroid_path = NodePath(centroid["path"])
-
         nodes = self._serialize_records(stmt())
-        dists = self._distance(centroid_path, *[n["path"] for n in nodes])
-        results = []
-        if len(dists) > 0:
-            closest_dist = min(dists)
-            indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
-            results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
-        return results
+        return self._closest(name, nodes)
 
+    @query_cache
     def closest_nodes(self, name: str, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
-        tables, c, relations = [self.tree], [], []
-        for condition in conditions:
-            if isinstance(condition, Rel):
-                relations.append(condition.as_condition())
-            else:
-                t = getattr(condition, "t", None)
-                if t is not None and t not in tables:
-                    tables.append(t)
-                c.append(condition)
-
-        r = self._parse_rel_conditions(relations)
-        stmt = select(self.tree).select_from(*tables).where(*c, *r)
+        tables, c = self._parse_framework_conditions(*conditions)
+        stmt = select(self.tree).select_from(*tables).where(*c)
         nodes = self._serialize_records(stmt)
-
-        centroid = self._node_or_raise(name)
-        centroid_path = NodePath(centroid["path"])
-
-        dists = self._distance(centroid_path, *[n["path"] for n in nodes])
-        results = []
-        if len(dists) > 0:
-            closest_dist = min(dists)
-            indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
-            results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
-        return results
+        return self._closest(name, nodes)
 
     @query_cache
     @topology_cache("parent")
@@ -405,7 +338,6 @@ class TreeEngine(BoundEngine):
                 return ancestor
         raise KeyError("Unable to find a common ancestor")
 
-
     @query_cache
     def distance(self, name: str, other_name: str) -> int:
         node = self._node_or_raise(name)
@@ -413,35 +345,6 @@ class TreeEngine(BoundEngine):
         dist = self._distance(node["path"], other["path"])
         return dist[0]
     
-    def _distance(self, path: str | NodePath, *other_paths: str | NodePath) -> list[int]:
-        def _dist(p: NodePath, commom_ancestor: str):
-            dist = 0
-            for n in p.nodes[::-1]:
-                if n != commom_ancestor:
-                    dist += 1
-                else:
-                    break
-            return dist
-
-        dists, centroid_path = [], NodePath(path)
-        for i, other in enumerate(other_paths):
-            opath = NodePath(other)
-
-            j, commom_ancestor = opath.len - 1, None
-            while j >= 0:
-                inner_node = opath.nodes[j]
-                if inner_node in centroid_path.nodes:
-                    commom_ancestor = inner_node
-                    break
-                j -= 1
-            if commom_ancestor is None:
-                raise ValueError("Malformed tree")
-            
-            dist = _dist(centroid_path, commom_ancestor)
-            dist += _dist(opath, commom_ancestor)
-            dists.append(dist)
-        return dists
-
     def traversal(self, sub_tree: str | None = None, order: TraversalOrder = "pre") -> Generator[dict[str, Any]]:
         base = sub_tree or self.root()["name"]
         match order:
@@ -456,7 +359,6 @@ class TreeEngine(BoundEngine):
             case _:
                 raise ValueError("traveral order must be either: [`pre`, `in`, `post`, `level`]")
 
-
     def level_order_traversal(self, *level_node_names: str) -> Generator[dict[str, Any]]:
         next_level = []
         for node in self._nodes(*level_node_names):
@@ -465,10 +367,6 @@ class TreeEngine(BoundEngine):
         if next_level:
             yield from self.level_order_traversal(*next_level)
     
-
-
-
-
     @clear_query_cache("all")
     def add_node(self, name: str, parent: str | None, metadata: dict[str, Any] | None = None) -> None:
         if parent is None and self._n_roots() > 0:
@@ -495,6 +393,7 @@ class TreeEngine(BoundEngine):
         if parent is not None:
             self._add_child(parent, name)
 
+    @clear_query_cache("all")
     def graft_nodes(
         self, 
         nodes: list[dict[str, Any]], 
@@ -517,12 +416,22 @@ class TreeEngine(BoundEngine):
         self.delete_topology(node["id"])
 
     @clear_query_cache("all")
+    def remove_nodes(self, *conditions: ColumnElement | Rel, force: bool = False) -> None:
+        """used from Tree __class__"""
+        tables, c = self._parse_framework_conditions(*conditions)
+        stmt = select(self.tree.c.name).select_from(*tables).where(*c)
+        names =  self._serialize_list(stmt)
+        [self.remove_node(name, force) for name in names]
+
+
+    @clear_query_cache("all")
     def remove_nodes_where(
         self, 
         relations: Sequence[Condition] | None = None, 
         conditions: Sequence[Condition] | None = None, 
         force: bool = False
     ) -> None:
+        """used with server parsed conditions"""
         r = self._parse_rel_conditions(relations)
         t, q = self._parse_cmp_conditions(conditions)
 
@@ -547,12 +456,21 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], values)
 
     @clear_query_cache("all")
+    def update_nodes(self, *conditions: ColumnElement | Rel, values: dict[str, Any]) -> None:
+        """used from Tree __class__"""
+        tables, c = self._parse_framework_conditions(*conditions)
+        stmt = select(self.tree.c.id).select_from(*tables).where(*c)
+        nids = self._serialize_list(stmt)
+        self.update_metadata(nids, values)
+
+    @clear_query_cache("all")
     def update_nodes_where(
         self,
         values: dict[str, Any],
         relations: Sequence[Condition] | None = None, 
         conditions: Sequence[Condition] | None = None, 
     ) -> None:
+        """used from server parsed conditions"""
         r = self._parse_rel_conditions(relations)
         t, q = self._parse_cmp_conditions(conditions)
 
@@ -661,6 +579,7 @@ class TreeEngine(BoundEngine):
     def object_pop_list(self, name: str, path: str, index: int) -> None:
         upt.JsonObjectPopList(self).apply(name, path, index)
 
+    @clear_query_cache("all")
     def import_from_file(self, path: str | Path, keymap: dict[str, Any] | None = None, on_collision: OnCollision = "raise") -> None:
         Importer(self.name, self, batch_size=100).load(path, keymap, on_collision)
 
@@ -760,3 +679,57 @@ class TreeEngine(BoundEngine):
                 case _:
                     raise ValueError()
         return (t, e)
+
+    def _parse_framework_conditions(self, *conditions: ColumnElement | Rel) -> tuple[Sequence[Table], Sequence[ColumnElement]]:
+        tables, c, relations = [self.tree], [], []
+        for condition in conditions:
+            if isinstance(condition, Rel):
+                relations.append(condition.as_condition())
+            else:
+                t = getattr(condition, "t", None)
+                if t is not None and t not in tables:
+                    tables.append(t)
+                c.append(condition)
+        r = self._parse_rel_conditions(relations)
+        return (tables, [*c, *r])
+
+    def _closest(self, name: str, nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        centroid = self._node_or_raise(name)
+        centroid_path = NodePath(centroid["path"])
+
+        dists = self._distance(centroid_path, *[n["path"] for n in nodes])
+        results = []
+        if len(dists) > 0:
+            closest_dist = min(dists)
+            indexes = [i for i in range(len(dists)) if dists[i] == closest_dist]
+            results = [{"distance": closest_dist, "node": nodes[i]} for i in indexes]
+        return results
+
+    def _distance(self, path: str | NodePath, *other_paths: str | NodePath) -> list[int]:
+        def _dist(p: NodePath, commom_ancestor: str):
+            dist = 0
+            for n in p.nodes[::-1]:
+                if n != commom_ancestor:
+                    dist += 1
+                else:
+                    break
+            return dist
+
+        dists, centroid_path = [], NodePath(path)
+        for i, other in enumerate(other_paths):
+            opath = NodePath(other)
+
+            j, commom_ancestor = opath.len - 1, None
+            while j >= 0:
+                inner_node = opath.nodes[j]
+                if inner_node in centroid_path.nodes:
+                    commom_ancestor = inner_node
+                    break
+                j -= 1
+            if commom_ancestor is None:
+                raise ValueError("Malformed tree")
+            
+            dist = _dist(centroid_path, commom_ancestor)
+            dist += _dist(opath, commom_ancestor)
+            dists.append(dist)
+        return dists
