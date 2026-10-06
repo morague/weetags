@@ -14,12 +14,12 @@ from sqlalchemy.engine import Engine as BaseEngine
 from typing import Any, Generator, Literal, Sequence, Type
 
 from weetags.common.conditions import Condition, ConditionType, SqlFunction
-from weetags.common.types import Relation, TraversalOrder, OnCollision, BaseRelations
+from weetags.common.types import Relations, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
 from weetags.common.path_utils import NodePath, NodePathCollection
 import weetags.common.utils as cutils
 import weetags.common.serializer as serializers
-from weetags.tree.fields import Relation as Rel
+from weetags.tree.fields import Relation
 import weetags.tree.update as upt
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.traversal import (
@@ -67,7 +67,7 @@ def clear_query_cache(scope: Literal["partial", "all"]):
     return inner
 
 
-def topology_cache(relation: Relation):
+def topology_cache(relation: Relations):
     def inner(f):
         @wraps(f)
         def wrapper(instance: TreeEngine, *args: Any, **kwargs: Any):
@@ -207,10 +207,10 @@ class TreeEngine(BoundEngine):
     # TREE PARTS ENUMERATION
     @query_cache
     def node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
-        return self._node(name)
+        return self._node(name, fields)
 
     @query_cache
-    def nodes(self, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
+    def nodes(self, *conditions: ColumnElement | Relation) -> list[dict[str, Any]]:
         """Used from Tree __class__"""
         tables, c = self._parse_framework_conditions(*conditions)
         stmt = select(self.tree).select_from(*tables).where(*c)
@@ -264,14 +264,14 @@ class TreeEngine(BoundEngine):
         return self._closest(name, nodes)
 
     @query_cache
-    def closest_nodes(self, name: str, *conditions: ColumnElement | Rel) -> list[dict[str, Any]]:
+    def closest_nodes(self, name: str, *conditions: ColumnElement | Relation) -> list[dict[str, Any]]:
         tables, c = self._parse_framework_conditions(*conditions)
         stmt = select(self.tree).select_from(*tables).where(*c)
         nodes = self._serialize_records(stmt)
         return self._closest(name, nodes)
 
     @query_cache
-    @topology_cache("parent")
+    # @topology_cache("parent")
     def parent_node(self, name: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         node = self._node_or_raise(name, fields)        
         parent_name = node.get("parent", None)
@@ -280,14 +280,14 @@ class TreeEngine(BoundEngine):
         return self._node(parent_name)
 
     @query_cache
-    @topology_cache("children")
+    # @topology_cache("children")
     def children_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         node = self._node_or_raise(name)
         children_names = node.get("children",  [])
         return self._nodes(*children_names, fields=fields)
 
     @query_cache
-    @topology_cache("siblings")
+    # @topology_cache("siblings")
     def sibling_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         parent = self.parent_node(name)
         if parent is None:
@@ -301,7 +301,7 @@ class TreeEngine(BoundEngine):
         return self._nodes(*siblings, fields= fields)
 
     @query_cache
-    @topology_cache("descendants")
+    # @topology_cache("descendants")
     def descendant_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         descendants = NodePathCollection(*paths).descendants_of(name)
@@ -310,7 +310,7 @@ class TreeEngine(BoundEngine):
         return self._nodes(*descendants, fields= fields)
 
     @query_cache
-    @topology_cache("ancestors")
+    # @topology_cache("ancestors")
     def ancestor_nodes(self, name: str, fields: list[str] | None = None, include_self: bool = False) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         ancestors = NodePathCollection(*paths).ancestors_of(name)
@@ -319,7 +319,7 @@ class TreeEngine(BoundEngine):
         return self._nodes(*ancestors, fields= fields)
 
     @query_cache
-    @topology_cache("branch")
+    # @topology_cache("branch")
     def branch_nodes(self, name: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
         paths = self.subtree_topology(name)
         branch = NodePathCollection(*paths).branch_of(name)
@@ -416,7 +416,7 @@ class TreeEngine(BoundEngine):
         self.delete_topology(node["id"])
 
     @clear_query_cache("all")
-    def remove_nodes(self, *conditions: ColumnElement | Rel, force: bool = False) -> None:
+    def remove_nodes(self, *conditions: ColumnElement | Relation, force: bool = False) -> None:
         """used from Tree __class__"""
         tables, c = self._parse_framework_conditions(*conditions)
         stmt = select(self.tree.c.name).select_from(*tables).where(*c)
@@ -456,7 +456,7 @@ class TreeEngine(BoundEngine):
         self.update_metadata([node["id"]], values)
 
     @clear_query_cache("all")
-    def update_nodes(self, *conditions: ColumnElement | Rel, values: dict[str, Any]) -> None:
+    def update_nodes(self, *conditions: ColumnElement | Relation, values: dict[str, Any]) -> None:
         """used from Tree __class__"""
         tables, c = self._parse_framework_conditions(*conditions)
         stmt = select(self.tree.c.id).select_from(*tables).where(*c)
@@ -680,10 +680,10 @@ class TreeEngine(BoundEngine):
                     raise ValueError()
         return (t, e)
 
-    def _parse_framework_conditions(self, *conditions: ColumnElement | Rel) -> tuple[Sequence[Table], Sequence[ColumnElement]]:
+    def _parse_framework_conditions(self, *conditions: ColumnElement | Relation) -> tuple[Sequence[Table], Sequence[ColumnElement]]:
         tables, c, relations = [self.tree], [], []
         for condition in conditions:
-            if isinstance(condition, Rel):
+            if isinstance(condition, Relation):
                 relations.append(condition.as_condition())
             else:
                 t = getattr(condition, "t", None)

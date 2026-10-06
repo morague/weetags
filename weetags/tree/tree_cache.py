@@ -31,7 +31,7 @@ class TreeCache:
     def bind(self, tree_name: str, engine: BoundEngine) -> TreeCache:
         self.tree_name = tree_name
         self._engine = engine
-        self.build()
+        # self.build()
         return self
     
     def query_key(self, signature: str) -> str:
@@ -59,6 +59,7 @@ class TreeCache:
         self.set(self.query_key(signature), values)
 
     def append_node_tracker(self, name: str, signature: str) -> None:
+        print("append", name, signature)
         self.cache_engine.append(self.tracker_key(name), signature)
 
     def clear_tracker(self, name: str) -> None:

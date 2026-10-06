@@ -16,6 +16,10 @@ class CacheEngine(ABC):
         return "base"
 
     @abstractmethod
+    def flush(self) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
     def set(self, key: str, value: Any) -> None:
         raise NotImplementedError()
 
@@ -50,6 +54,9 @@ class LocalCacheEngine(CacheEngine):
     def name(self) -> str:
         return "local"
 
+    def flush(self) -> None:
+        self.cache = {}
+
     def set(self, key: str, value: Any) -> None:
         self.cache.update({key:value})
 
@@ -74,15 +81,24 @@ class LocalCacheEngine(CacheEngine):
 class MemcachedCacheEngine(CacheEngine):
     client: PooledClient
 
-    def __init__(self, server: str, workers: int = 4, **opts):
+    def __init__(self, server: str, workers: int = 4, prefix: str | None = None, **opts):
         self.client = PooledClient(server, serde=serde.pickle_serde, max_pool_size=workers)
+        self._set_key_prefix(prefix)
+        self.flush()
 
     @property
     def name(self) -> str:
         return "memcached"
 
+    def flush(self) -> None:
+        self.client.flush_all()
+        self._set_tracker()
+
     def set(self, key: str, value: Any) -> None:
+        exist = self.check(key)
         self.client.set(key, value, noreply=True)
+        if exist is False:
+            self._append_tracker(key)
 
     def get(self, key: str, default = None):
         return self.client.get(key, default)
@@ -92,10 +108,30 @@ class MemcachedCacheEngine(CacheEngine):
 
     def check(self, key: str) -> bool:
         check = True
-        res = self.get(key, "no")
-        if res == "no":
+        res = self.get(key, None)
+        if res is None:
             check = False
         return check
 
-    def append(self, key: str, value: Any) -> None: ...
-    def get_keys_with_prefix(self, prefix: str) -> list[str]: ...
+    def append(self, key: str, value: Any) -> None:
+        if self.check(key) is False:
+            values = []
+        else:
+            values = self.get(key)
+            assert isinstance(values, list) 
+        values.append(value)
+        self.set(key, values)
+    
+    def get_keys_with_prefix(self, prefix: str) -> list[str]: 
+        tracker: str = self.get("_tracker")
+        return [k for k in tracker.split(",") if k.startswith(prefix)]
+
+    def _set_tracker(self) -> None:
+        self.client.set("_tracker", "")
+
+    def _append_tracker(self, key: str) -> None:
+        self.client.append("_tracker", f"{key},")
+
+    def _set_key_prefix(self, prefix: str | None = None) -> None:
+        p = prefix or ""
+        self.client.key_prefix = p.encode()

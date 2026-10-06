@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from sqlalchemy import ColumnElement
-from typing import Any, Generator, Literal, Type
+from typing import Any, Generator, Type
 
 from weetags.common import Engine, EngineURI
-from weetags.common.conditions import Condition
 from weetags.common.loaders import Loader, YamlLoader
-from weetags.common.configs import FieldType, TreeConfig
+from weetags.common.configs import FieldType, TreeConfig, CacheDefinition
 from weetags.common.types import TraversalOrder, OnCollision
-from weetags.tree.tree_engine import Rel, TreeEngine
+from weetags.tree.tree_engine import TreeEngine
 from weetags.common.alteration import Alteration
 from weetags.tree.tree_cache import TreeCache
 from weetags.tree.drawer import DrawStyle, TreeDrawer
@@ -218,7 +217,8 @@ class Tree:
 
         cache, c = None, kwargs.pop("cache", None)
         if c is not None:
-            cache = TreeCache(**c)
+            assert configs.cache is not None
+            cache = TreeCache(configs.cache.cache, **configs.cache.opts) # pyright: ignore
         return cls.initialize(**kwargs, cache=cache)
 
 
