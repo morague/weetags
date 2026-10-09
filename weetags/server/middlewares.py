@@ -49,7 +49,7 @@ async def error_handler(request: Request, exception: Exception):
     perf = None  # for some unknown reasons perf middleware get skipped for some requests. thus need to check if t is stored.
     if getattr(request.ctx, "t", None) is not None:
         perf = round(perf_counter() - request.ctx.t, 5)
-    status = getattr(exception, "status", 500)
+    status = getattr(exception, "status_code", 500)
     logger.error(
         f"{request.host} > {request.method} {request.url} : {str(exception)} [{str(status)}][{str(len(str(exception)))}b][{perf}s]"
     )

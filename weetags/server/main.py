@@ -88,7 +88,6 @@ class Weetags:
         ...
 
     def tree_configs(self, file_or_folder: str | Path, loader: Type[Loader] = YamlLoader) -> dict[str, Any]:
-        print(file_or_folder)
         path = Path(file_or_folder)
 
         if path.is_dir():

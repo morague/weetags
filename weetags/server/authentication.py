@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import jwt
+import fnmatch
 import time
 import argon2
-from sqlalchemy import Row, select, delete, create_engine
+from sqlalchemy import Row, exc, select, delete, create_engine
 from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Literal, Any
 
+import weetags.common.exceptions as excp
 import weetags.common.base as base
 from weetags.common.engine import Engine
 from weetags.common.serializer import BaseSerializer
@@ -32,7 +34,7 @@ class Users:
     def get_user_or_raise(self, username: str) -> Row:
         user = self.get_user(username)
         if user is None:
-            raise ValueError(f"Unknown username: {username}")
+            raise excp.UnauthorizedAccessError("Invalid Username")
         return user
 
     def set_user(self, username: str, password: str, roles: list[str]) -> int:
@@ -52,7 +54,7 @@ class Users:
 
     def update_user_password(self, username: str, password: str, new_password: str, confirmation: str) -> None:
         if new_password != confirmation:
-            raise ValueError("Password and confirmation are different")
+            raise excp.UnauthorizedAccessError("Invalid password confirmation.")
         table = self._engine._table_or_raise("users")
 
         hasher = argon2.PasswordHasher()
@@ -146,9 +148,6 @@ class Rules:
     def _set_default(self, default: Literal["deny", "allow"]) -> None:
         if default == "deny":
             table = self._engine._table_or_raise("rules")
-            self._engine._write(table, {"priority": 999, "type": "path", "method": ".*", "rule": "/favicon.ico*", "role": "*"})
-            self._engine._write(table, {"priority": 999, "type": "path", "method": ".*", "rule": "/static*", "role": "*"})
-            self._engine._write(table, {"priority": 999, "type": "blueprint", "method": ".*", "rule": "auth", "role": "*"})
             self._engine._write(table, {"priority": 1000, "type": "path", "method": ".*", "rule": "/*", "role": None})
         
 
@@ -157,6 +156,9 @@ class Authenticator(Engine):
     MAX_AGE: int = 10800
     SECRET_KEY: str
     MAXIMUM_PRIORITY: int = 1000
+
+    BYPASS_PATHS_PATTERN = ["/favicon.ico*", "/static*"]
+    BYPASS_BLUEPRINTS = ["auth"]
 
     def __init__(
         self, 
@@ -207,38 +209,48 @@ class Authenticator(Engine):
     def authenticate(self, username: str, password: str) -> str:
         user = self.users.get_user(username)
         if user is None:
-            raise ValueError(f"Unknown Username: {username}")
+            raise excp.UnauthorizedAccessError("Invalid Username or password.")
 
         _,_,password_hash,roles=user
 
         hasher = argon2.PasswordHasher()
-        hasher.verify(password_hash, password)
+        try:
+            hasher.verify(password_hash, password)
+        except (
+            argon2.exceptions.InvalidHashError, 
+            argon2.exceptions.VerifyMismatchError, 
+            argon2.exceptions.VerificationError
+        ):
+            raise excp.UnauthorizedAccessError("Invalid Username or password.")
         return jwt.encode({"roles": roles, "max_age": time.time() + self.MAX_AGE}, self.SECRET_KEY)
 
     def authorize(self, blueprint: str, method: str, path: str, token: str | None = None) -> bool:
+        if self._bypass(blueprint, path):
+            return True
+
         rule = self.rules.get_rule(blueprint, method, path)
         if rule is None:
             return True
 
         _, priority, rtype, _, _, role = rule
         if role is None:
-            raise ValueError("Forbidden") #403 
+            excp.ForbiddenAccessError()
         if role == "*":
             return True
 
         if token is None:
-            raise KeyError("Unauthorized") # 401
+            raise excp.UnauthorizedAccessError("Unauthorized access.")
         payload = self._authorize(token)
         if payload is None:
-            raise KeyError("Unauthorized") # 401
+            raise excp.UnauthorizedAccessError("Unauthorized access.")
 
         max_age = payload.get("max_age", 0)
         if time.time() > max_age:
-            raise ValueError("Unauthorized") # 401
+            raise excp.UnauthorizedAccessError("Unauthorized access.")
 
         user_roles = payload.get("roles", [])
         if role not in user_roles:
-            raise KeyError("Unauthorized") # 401
+            raise excp.UnauthorizedAccessError("Unauthorized access.")
         return True
 
     def _authorize(self, token: str) -> dict[str, Any] | None:
@@ -248,3 +260,8 @@ class Authenticator(Engine):
             print(e)
             payload = None
         return payload
+
+    def _bypass(self, blueprint: str, path: str) -> bool:
+        bypass_path = any([bool(fnmatch.filter([path], pat)) for pat in Authenticator.BYPASS_PATHS_PATTERN])
+        bypass_bp = blueprint in Authenticator.BYPASS_BLUEPRINTS
+        return any([bypass_path, bypass_bp])
