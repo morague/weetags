@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator, Literal, Sequence, Type
 
+from weetags.common.configs import CacheDefinition
 from weetags.common.conditions import Condition, ConditionType, SqlFunction
 from weetags.common.types import Relations, TraversalOrder, OnCollision, BaseRelations
 from weetags.common import EngineURI, Engine, BoundEngine, QueryBuilder
@@ -142,10 +143,10 @@ class TreeEngine(BoundEngine):
         if isinstance(uri, dict):
             uri = EngineURI(**uri)
 
-        cache_configs = configs.get("cache", None)
-        cache = None
+        cache, cache_configs = None, configs.get("cache", None)
         if cache_configs is not None:
-            cache = TreeCache(**cache_configs)
+            c = CacheDefinition(**cache_configs)
+            cache = TreeCache(c.cache, **c.opts) # pyright: ignore
         return cls.build(name, uri, cache)
 
     @classmethod

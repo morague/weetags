@@ -71,7 +71,8 @@ class TreeBuilder:
 
         cache, c = None, kwargs.pop("cache", None)
         if c is not None:
-            cache = TreeCache(**c)
+            assert configs.cache is not None
+            cache = TreeCache(configs.cache.cache, **configs.cache.opts) # pyright: ignore
             tree.set_cache(cache)
         return tree        
 
