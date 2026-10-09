@@ -5,6 +5,7 @@ import inspect
 from abc import ABC
 from collections import ChainMap, defaultdict
 from urllib.parse import unquote
+import attr
 from sanic import Request
 from functools import wraps
 from attrs import define, field, validators, Attribute
@@ -21,8 +22,8 @@ def int_converter(value: Any) -> int:
     elif isinstance(value, str) and value.isnumeric():
         return int(value)
     else:
-        raise TypeError(f"Unable to convert value {value} to int.")
-
+        raise excp.ConvertTypeError(str(value), "int")
+        
 def list_or_none_converter(value: Any) -> list[Any] | None:
     if value is None:
         return value
@@ -31,7 +32,7 @@ def list_or_none_converter(value: Any) -> list[Any] | None:
     elif isinstance(value, str):
         return [s.strip() for s in value.split(",")]
     else:
-        raise TypeError("a list or a comma seperated string is expected.")
+        raise excp.ConvertTypeError(str(value), "list[str]", "A list or a comma separated string are is expected.")
 
 def bool_converter(value: Any) -> Any:
     if value is None:
@@ -44,16 +45,16 @@ def bool_converter(value: Any) -> Any:
 
     true_pattern = re.compile(r"True|TRUE|true|on|1")
     falst_pattern = re.compile(r"False|FALSE|false|off|0")
-
+    error = excp.ConvertTypeError(str(value), "bool")
     if isinstance(value, str) and value == "":
         return True
     elif isinstance(value, str):
         is_true = re.findall(true_pattern, value)
         is_false = re.findall(falst_pattern, value)
         if len(is_true) > 0 and len(is_false) > 0:
-            raise ValueError(f"ambiguous bool value {str(value)}.")
+            raise error
         elif len(is_true) > 1 or len(is_false) > 1:
-            raise ValueError(f"ambiguous bool value {str(value)}.")
+            raise error
         elif len(is_true) == 1:
             return True
         elif len(is_false) == 1:
@@ -63,35 +64,34 @@ def bool_converter(value: Any) -> Any:
     elif isinstance(value, int) and value == 0:
         return False
     else:
-        raise ValueError(f"Unable to convert {value} into boolean.")
+        raise error
 
     return False
 
 def str_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, str) and value is not None:
-        raise ValueError(f"Argument {attribute} is not of type[str|None]")
-
+        raise excp.ParsedTypeError(attribute.name, "str | None")
 
 def int_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, int) and value is not None:
-        raise ValueError(f"Argument {attribute} is not of type[int|None]")
+        raise excp.ParsedTypeError(attribute.name, "int | None")
 
 def dict_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, dict) and value is not None:
-        raise ValueError(f"Argument {attribute} is not of type[int|None]")
+        raise excp.ParsedTypeError(attribute.name, "dict | None")
 
 def is_colision(instance: Type, attribute: Attribute, value: Any):
     if value not in get_args(ty.OnCollision.__value__):
-        raise ValueError(f"Argument {attribute} should be one of: {ty.OnCollision.__value__}")
-
+        raise excp.LiteralError(attribute.name, get_args(ty.OnCollision.__value__))
 
 def validate_list_or_none(instance: Type, attribute: Attribute, value: Any):
     if value is None:
         return
+    error = excp.ParsedTypeError(attribute.name, "list[str]")
     if not isinstance(value, list):
-        raise ValueError(f"Argument {attribute} is not of type: list[str]")
+        raise error
     elif not all([isinstance(e, str) for e in value]):
-        raise ValueError(f"Argument {attribute} is not of type: list[str]")
+        raise error
 
 
 def parser(model: Type[ArgumentParser]):
@@ -106,7 +106,7 @@ def parser(model: Type[ArgumentParser]):
 
 def validate_relation(instance: Type, attribute: Attribute, value: Any) -> None:
     if value not in get_args(ty.BaseRelations.__value__):
-        raise ValueError(f"Relation must be one of: {get_args(ty.BaseRelations.__value__)}.")
+        raise excp.LiteralError(attribute.name, get_args(ty.BaseRelations.__value__))
 
 def base_query_args(request: Request) -> dict[str, Any]:
     _map = defaultdict(list)

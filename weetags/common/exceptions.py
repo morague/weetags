@@ -1,7 +1,6 @@
 
 
-from email import message
-from typing import Sequence
+from typing import Sequence, Any
 
 
 class WeetagsException(Exception):
@@ -171,6 +170,14 @@ class ConfigsError(WeetagsException):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+class ConvertTypeError(ConfigsError):
+    status_code: int = 400
+    message: str = "Unable to convert {value} into {dtype}. {hint}"
+
+    def __init__(self, value: Any, dtype: str, hint: str = "") -> None:
+        super().__init__(ConvertTypeError.message.format(value=value, dtype=dtype, hint=hint))
+
 
 
 class ParsedTypeError(ConfigsError):

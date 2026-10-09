@@ -5,6 +5,7 @@ import traceback
 from time import perf_counter
 from sanic import Request, HTTPResponse, json
 
+import weetags.common.exceptions as excp
 from weetags.server.authentication import Authenticator
 
 logger = logging.getLogger("access")
@@ -25,9 +26,8 @@ async def authorize(request: Request) -> None:
         blueprint = request.route.name.split('.')[1]
         authorized = auth.authorize(blueprint, request.method, request.path, request.token)
         if authorized is False:
-            raise ValueError("Unauthorized") # 401
+            raise excp.UnauthorizedAccessError("Unauthorized access.")
         
-
 async def log_exit(request: Request, response: HTTPResponse) -> None:
     perf, size = None, None
 
