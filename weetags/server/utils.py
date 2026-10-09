@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from os import read
-from typing import Any
-from attrs import define, field
+from random import choice
+from string import hexdigits
 from sanic import Request
 
 from weetags.common.configs import TreeConfig
@@ -26,3 +25,6 @@ def generate_notification_payload(message: str | None = None, level: str | None 
     if message is not None and level and level is not None:
         payload.append({"level": level, "message": message})
     return payload
+
+def uid(size: int=8) -> str:
+    return "".join([choice(hexdigits) for _ in range(size)])

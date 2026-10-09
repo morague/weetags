@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import tempfile
 import json as serde
 from sanic_ext import render
-from sanic import Blueprint, HTTPResponse, Request, json, redirect, html, empty
-from sanic.response import JSONResponse, ResponseStream, HTTPResponse, file_stream
+from sanic import Blueprint, HTTPResponse, Request, json, redirect, empty
+from sanic.response import JSONResponse, HTTPResponse
 
 from typing import get_args
 
@@ -13,7 +12,7 @@ from weetags.common.utils import OP, SQLF
 from weetags.tree.tree_engine import TreeEngine
 from weetags.tree.tree import Tree
 import weetags.server.arguments as arg
-from weetags.server.utils import get_engine, generate_notification_payload
+from weetags.server.utils import get_engine, generate_notification_payload, uid
 from weetags.server.authentication import Authenticator
 
 basebp = Blueprint("base", "/")
@@ -182,23 +181,22 @@ async def get_field(request: Request, arguments: arg.Fieldrguments) -> JSONRespo
 
 @utilsbp.get("trees/<tree_name:str>/export")
 @arg.parser(arg.ExportArguments)
-async def export(request: Request, arguments: arg.ExportArguments) -> ResponseStream:
+async def export(request: Request, arguments: arg.ExportArguments):
     engine: TreeEngine = get_engine(request, arguments)
-    with tempfile.NamedTemporaryFile(prefix=f"{arguments.tree_name}_", suffix=".jl", delete=False) as fp:
-        for node in engine.traversal(arguments.subtree, "pre"):
-            payload = serde.dumps(node)
-            fp.write(f"{payload}\n".encode())
-        return await file_stream(
-            fp.name, 
-            chunk_size=1024, 
-            mime_type="application/jsonlines",
-            headers={
-                "Content-Disposition": f'Attachment; filename="{fp.name}"',
-                "Content-Type": "application/jsonlines",
-            }
-        )
+    
+    response = await request.respond(
+        headers={
+            "Content-Disposition": f'Attachment; filename="{arguments.tree_name}_{arguments.subtree or "root"}_{uid(8)}.jl"',
+            "Content-Type": "application/jsonlines",
+        },
+        content_type="application/jsonlines"
+    )
+    assert response is not None
 
-
+    for node in engine.traversal(arguments.subtree, "pre"):
+        data = f"{serde.dumps(node)}\n"
+        await response.send(data)
+        
 @explorerbp.route("trees/<tree_name:str>/explorer", methods=["GET"])
 @arg.parser(arg.ExplorerArguments)
 async def explorer(request: Request, arguments: arg.ExplorerArguments) -> HTTPResponse:
