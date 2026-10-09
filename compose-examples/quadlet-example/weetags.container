@@ -1,0 +1,21 @@
+[Unit]
+Description=Weetags server.
+After=memcached.service weetags.build weetags.network
+
+[Container]
+Image=weetags.build
+ContainerName=weetags
+PublishPort=127.0.0.1:8000:8000
+EnvironmentFile=%h/.../.env.quadlet
+Volume=%h/.../trees:/app/trees
+Volume=%h/.../data:/app/data
+Volume=%h/.../databases:/app/databases
+Volume=%h/.../server.yml:/app/server.yml
+Network=weetags.network
+
+[Service]
+Restart=always
+
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,14 @@
+services:
+  weetags:
+    build: .
+    container_name: weetags
+    restart: unless-stopped
+    env_file: .env.dev
+    ports:
+      - 127.0.0.1:8000:8000
+    volumes:
+      - ./data:/app/data
+      - ./trees:/app/trees
+      - ./databases:/app/databases
+      - ./server.yml:/app/server.yml
+

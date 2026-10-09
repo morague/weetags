@@ -1,0 +1,4 @@
+[Build]
+File=Dockerfile
+ImageTag=weetags:latest
+SetWorkingDirectory=...
