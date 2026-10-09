@@ -8,7 +8,6 @@ from sanic import Sanic
 from weetags.common.serializer import HttpSerializer
 import weetags.server.utils as sutils
 from weetags.tree.tree_engine import TreeEngine
-from weetags.tree.tree import Tree
 
 async def states(app: Sanic):
     app.shared_ctx.states = Manager().dict()

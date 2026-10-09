@@ -5,13 +5,14 @@ import inspect
 from abc import ABC
 from collections import ChainMap, defaultdict
 from urllib.parse import unquote
-from sanic import Request, request
+from sanic import Request
 from functools import wraps
 from attrs import define, field, validators, Attribute
 
 from typing import Any, Callable, Sequence, Type, get_args
 
 import weetags.common.types as ty
+import weetags.common.exceptions as excp
 from weetags.common.conditions import Condition, convert_cmp_conditions, convert_rel_conditions
 
 def int_converter(value: Any) -> int:
@@ -107,6 +108,26 @@ def validate_relation(instance: Type, attribute: Attribute, value: Any) -> None:
     if value not in get_args(ty.BaseRelations.__value__):
         raise ValueError(f"Relation must be one of: {get_args(ty.BaseRelations.__value__)}.")
 
+def base_query_args(request: Request) -> dict[str, Any]:
+    _map = defaultdict(list)
+    [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+    args = {k:(v if len(v) > 1 else v[0]) for k,v in _map.items()}
+    return args
+
+def query_args_with_conditions(request: Request) -> dict[str, Any]:
+    _map = defaultdict(list)
+    [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+
+    args = {}
+    for k,v in _map.items():
+        if k in ["q", "r"]:
+            args.update({k:v})
+        elif len(v) > 1:
+            args.update({k:v})
+        else:
+            args.update({k:v[0]})
+    return args
+
 class ArgumentParser(ABC):
     tree_name: str = field(validator=validators.instance_of(str))
 
@@ -123,10 +144,8 @@ class ArgumentParser(ABC):
 
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
-        _map = defaultdict(list)
-        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
-        args = {k:(v if len(v) > 1 else v[0]) for k,v in _map.items()}
-        return args
+        return base_query_args(request)
+
 
 @define
 class BaseTreeArguments(ArgumentParser):
@@ -143,18 +162,8 @@ class NodesArguments(ArgumentParser):
     
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
-        _map = defaultdict(list)
-        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
+        return query_args_with_conditions(request)
 
-        args = {}
-        for k,v in _map.items():
-            if k in ["q", "r"]:
-                args.update({k:v})
-            elif len(v) > 1:
-                args.update({k:v})
-            else:
-                args.update({k:v[0]})
-        return args
 
 @define
 class ClosestNodesArguments(ArgumentParser):
@@ -166,19 +175,7 @@ class ClosestNodesArguments(ArgumentParser):
 
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
-        _map = defaultdict(list)
-        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
-
-        args = {}
-        for k,v in _map.items():
-            if k in ["q", "r"]:
-                args.update({k:v})
-            elif len(v) > 1:
-                args.update({k:v})
-            else:
-                args.update({k:v[0]})
-        return args
-
+        return query_args_with_conditions(request)
 
 @define
 class RootArguments(ArgumentParser):
@@ -306,18 +303,7 @@ class RemoveNodesArguments(ArgumentParser):
 
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
-        _map = defaultdict(list)
-        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
-
-        args = {}
-        for k,v in _map.items():
-            if k in ["q", "r"]:
-                args.update({k:v})
-            elif len(v) > 1:
-                args.update({k:v})
-            else:
-                args.update({k:v[0]})
-        return args
+        return query_args_with_conditions(request)
 
 @define
 class PruneArguments(ArgumentParser):
@@ -338,18 +324,7 @@ class UpdateNodesArguments(ArgumentParser):
 
     @staticmethod
     def query_args(request: Request) -> dict[str, Any]:
-        _map = defaultdict(list)
-        [_map[k].append(v) for k,v in request.get_query_args(keep_blank_values=True)]
-
-        args = {}
-        for k,v in _map.items():
-            if k in ["q", "r"]:
-                args.update({k:v})
-            elif len(v) > 1:
-                args.update({k:v})
-            else:
-                args.update({k:v[0]})
-        return args
+        return query_args_with_conditions(request)
 
 @define
 class UpdateNodeArguments(ArgumentParser):

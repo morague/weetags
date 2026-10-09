@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import logging
-import re
 import traceback
 from time import perf_counter
 from sanic import Request, HTTPResponse, json
 
 from weetags.server.authentication import Authenticator
-from weetags.server.routes import authenticate
 
 logger = logging.getLogger("access")
 
