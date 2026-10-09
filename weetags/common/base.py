@@ -13,12 +13,13 @@ from sqlalchemy import (
     false
 )
 
+import weetags.common.exceptions as excp
 from weetags.common.configs import FieldDefinition
 
 
 def field_is_reserved(field: str) -> bool:
     if field in TreeTopologyDefinition().namespace:
-        raise KeyError(f"Field name: {field} is a reserved namespace.")
+        raise excp.ReservedFieldNameError(field)
     return True
 
 
@@ -107,5 +108,5 @@ class TreeViewDefinition:
             case "psql":
                 create = "CREATE OR REPLACE VIEW"
             case _:
-                raise ValueError(f"Unknown database dialect: {self.dialect}")
+                raise excp.TreeEngineDialectError(f"Unknown sql dialect: {self.dialect}")
         return create

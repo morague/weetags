@@ -5,11 +5,14 @@ import json
 import hashlib
 import inspect
 from pathlib import Path
-from sqlalchemy import Table
+from sqlalchemy import Table, exc
 from datetime import datetime
 from attrs import define, field
 
-from typing import Any, Callable, Type
+from typing import Any, Callable, Type, get_args
+
+import weetags.common.types as ty
+import weetags.common.exceptions as excp
 
 OP = {
     "=": "__eq__",
@@ -47,7 +50,7 @@ def translate_sqlalchemy_sqltype(dtype: Any) -> Type:
         case "JSON":
             return Json
         case _:
-            raise ValueError("Non handled sql type")
+            raise excp.LiteralError("Field type", get_args(ty.AcceptedFieldType.__value__))
         
 
 def translate_keys(data: dict[str, Any], keymap: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -67,7 +70,7 @@ def convert_buffer(value: Any) -> str | None:
     elif isinstance(value, bytes):
         return value.decode()
     else:
-        raise TypeError("buffer must be a str or utf-8 encoded bytes.")
+        raise excp.ParsedTypeError("buffer", "str | utf-8 encoded bytes")
 
 def path_converter(value: Any) -> Path | None:
     if value is None:
@@ -77,7 +80,7 @@ def path_converter(value: Any) -> Path | None:
     elif isinstance(value, Path):
         return value
     else:
-        raise TypeError("path must be a str or a Path")
+        raise excp.ParsedTypeError("path", "str | Path")
 
 
 
@@ -85,22 +88,22 @@ def path_converter(value: Any) -> Path | None:
 
 def field_exist(field: str, metadata: Table) -> bool:
     if field in metadata.columns.keys():
-        raise KeyError(f"Field name: {field} does already exist")
+        raise excp.ExistingFieldNameError(field)
     return True
 
 def field_not_exist(field: str, metadata: Table) -> bool:
     if field not in metadata.columns.keys():
-        raise KeyError(f"Field name: {field} doesn't exist")
+            raise excp.FieldError(field)
     return True
 
 def field_non_nullable(nullable: bool, default: Any) -> bool:
     if nullable is False and default is None:
-        raise ValueError("New fields require either to be nullable or to have a default value")
+        raise excp.FieldConstrainError("Newly added fields must be: `nullable` or have `default` value.")
     return True
 
 def psql_required(dialect: str) -> bool:
     if dialect != "postgres":
-        raise ValueError("Unique constraint manipulation after tree creation is only available for psql dialect.")
+        raise excp.TreeEngineDialectError("Constraint alterations require a `psql` database.")
     return True
 
 def require_sqlite_version() -> bool:
@@ -142,7 +145,7 @@ class Signature:
 
     def get_parameter(self, key: str, default: Any = None, or_raise: bool = False) -> Any:
         if key not in self.parameters.keys() and or_raise:
-            raise KeyError(f"Unknown key {key}")
+            raise excp.UnknownArgumentError(key)
         return self.parameters.get(key, default)
 
     def _serialize(self, value: Any) -> Any:

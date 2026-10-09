@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Generator, Literal
 
+import weetags.common.exceptions as excp
 
 def contains_seperator(f):
     def wrapper(instance: NodePath, *args, **kwargs):
         seperator = args[0]
         if seperator not in instance.nodes:
-            raise ValueError(f"Path does not contain the separator: {seperator}")
+            raise excp.NodePathError(seperator, instance.path)
         return f(instance, *args, **kwargs)
     return wrapper
 
@@ -16,9 +17,9 @@ def validate_fix(f):
     def wrapper(instance: NodePath, *args, **kwargs):
         size = args[0]
         if size == 0:
-            raise ValueError("`size` must be > 0.")
+            raise excp.PathSegmentationError("`size` must be > 0.")
         if size > len(instance.nodes):
-            raise ValueError("`size` must be < than the path size")
+            raise excp.PathSegmentationError("`size` must be < than the path size")
         return f(instance, *args, **kwargs)
     return wrapper
 
@@ -70,7 +71,7 @@ class NodePath:
 
     def subpath(self, node: str, node_is: Literal["leaf", "root"] = "root") -> str:
         if self.contains_node(node) is False:
-            raise ValueError(f"{node} is not part of path: {self.path}.")
+            raise excp.NodeNotInPathError(node, self.path)
         index = self.nodes.index(node)
 
         if node_is == "leaf":
@@ -85,7 +86,7 @@ class NodePath:
         if include_node:
             index += 1
         if index >= len(self.nodes):
-            raise ValueError("last node from a path has to be excluded")
+            raise excp.PathSegmentationError("Path.lstrip from a path last node must have `include_node` set to False")
         return ".".join(self.nodes[index:])
 
     @contains_seperator
@@ -94,12 +95,13 @@ class NodePath:
         if include_node is False:
             index += 1
         if index == 0:
-            raise ValueError("first node from a path has to be included")
+            raise excp.PathSegmentationError("Path.rstrip from a path first node must have `include_node` set to True")
         return ".".join(self.nodes[:index])
 
     def distance(self, node0: str, node1: str) -> int:
         if not all([self.contains_node(node0), self.contains_node(node1)]):
-            raise ValueError(f"{node0} or {node1} is not part of path: {self.path}.")
+            nodes = f"{node0} or {node1}"
+            raise excp.NodeNotInPathError(nodes, self.path)
         name_pos = self.nodes.index(node0)
         other_pos = self.nodes.index(node1)
         return abs(name_pos - other_pos)
@@ -144,7 +146,7 @@ class NodePathCollection:
             ancestors = NodePath(subpath).nodes
             break
         if ancestors is None:
-            raise ValueError(f"No paths contains node name: {node}")
+            raise excp.NodeNotInPathsError(node)
         return ancestors
 
     def descendants_of(self, node: str) -> list[str]:

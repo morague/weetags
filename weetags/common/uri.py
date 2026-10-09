@@ -5,15 +5,16 @@ from attrs import define, field, Attribute
 
 from typing import Type, Any
 
+import weetags.common.exceptions as excp
 
 def str_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, str) and value is not None:
-        raise ValueError(f"Argument {attribute} is not of type[str|None]")
+        raise excp.ParsedTypeError(attribute.name, "str | None")
 
 
 def int_or_none(instance: Type, attribute: Attribute, value: Any):
     if not isinstance(value, int) and value is not None:
-        raise ValueError(f"Argument {attribute} is not of type[int|None]")
+        raise excp.ParsedTypeError(attribute.name, "int | None")
 
 
 

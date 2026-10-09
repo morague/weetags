@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from math import exp
 from pathlib import Path
 from attrs import define, field, validators, asdict
 from sqlalchemy.types import TypeEngine
@@ -20,71 +21,77 @@ from weetags.common.loaders import ConfigLoader, Loader, YamlLoader
 from weetags.common.utils import path_converter
 from weetags.common.types import TreeTypes, OnChange, OnCollision, CacheType
 from weetags.common.uri import EngineURI
+from weetags.common import exceptions as excp
 
 def validate_tree_type(instance, attribute, value) -> None:
     accepted = get_args(TreeTypes.__value__)
     if isinstance(value, str) is False or value not in accepted:
-        raise ValueError(f"Tree types must be either one of the following: {accepted}.")
+        raise excp.LiteralError("Tree type", accepted)
 
 def validate_on_change(instance, attribute, value) -> None:
     accepted = get_args(OnChange.__value__)
     if isinstance(value, str) is False or value not in accepted:
-        raise ValueError(f"change strategytypes must be either one of the following: {accepted}.")
+        raise excp.LiteralError("on_change type", accepted)
 
 def validate_on_collision(instance, attribute, value) -> None:
     accepted = get_args(OnCollision.__value__)
     if isinstance(value, str) is False or value not in accepted:
-        raise ValueError(f"Collision strategy must be either one of the following: {accepted}.")
+            raise excp.LiteralError("on_collision type", accepted)
 
 def validate_cache_type(instance, attribute, value) -> None:
     accepted = get_args(CacheType.__value__)
     if isinstance(value, str) is False or value not in accepted:
-        raise ValueError(f"Cache type must be either one of the following: {accepted}.")
-
+        raise excp.LiteralError("cache type", accepted)
 
 def validate_nested_str_list_or_none(instance, attribute, value) -> None:
     if value is None:
         return
+
+    error = excp.ParsedTypeError(attribute.name, "list[list[str]] | None")
     
     if isinstance(value, list) is False:
-        raise ValueError(f"{attribute.name} must be a list[list[str]] | None")
+        raise error
 
     for inner in value:
         if isinstance(inner, list) is False:
-            raise ValueError(f"{attribute.name} must be a list[list[str]] | None")
+            raise error
         for elm in inner:
             if isinstance(elm, str) is False:
-                raise ValueError(f"{attribute.name} must be a list[list[str]] | None")
+                raise error
 
 def validate_list_field_def(instance, attribute, value) -> None:
+    error = excp.ParsedTypeError(attribute.name, "list[FieldDefinition]")
     if isinstance(value, list) is False:
-            raise ValueError(f"{attribute.name} must be a list[FieldDefinition]")
+            raise error
     for inner in value:
         if isinstance(inner, FieldDefinition) is False:
-                raise ValueError(f"{attribute.name} must be a list[FieldDefinition]")
+            raise error
 
 def validate_path_or_none(instance, attribute, value) -> None:
     if value is None:
         return
+    error = excp.ParsedTypeError(attribute.name, "Path | None")
     if isinstance(value, Path) is False:
-        raise ValueError(f"{attribute.name} must be of type: Path | None")
+        raise error
 
 def validate_payload_or_none(instance, attribute, value) -> None:
     if value is None:
         return
+    error = excp.ParsedTypeError(attribute.name, "list[dict[str, Any]] | None")
     if isinstance(value, list) is False:
-        raise ValueError(f"{attribute.name} must be of type: list[dict[str, Any]] | None")
+        raise error
     if len(value) > 0 and isinstance(value[0], dict) is false:
-        raise ValueError(f"{attribute.name} must be of type: list[dict[str, Any]] | None")
+        raise error
 
 def validate_keymap(instance, attribute, value) -> None:
     if value is None:
         return
+    error = excp.ParsedTypeError(attribute.name, "dict[str, str]] | None")
     if isinstance(value, dict) is False:
-        raise ValueError(f"{attribute.name} must be of type: dict[str, str]] | None")
+        raise error
     for k,v in value.items():
         if isinstance(k, str) or isinstance(v, str):
-            raise ValueError(f"{attribute.name} must be of type: dict[str, str]] | None")
+            raise error
 
 class DefinitionValidator:
     def __init__(self, cls: Type) -> None:
@@ -95,7 +102,7 @@ class DefinitionValidator:
             return
 
         if isinstance(value, self.cls) is False:
-            raise ValueError(f"{attribute.name} must be of type: {self.cls}")
+            raise excp.ParsedTypeError(attribute.name, str(self.cls))
 
 class FieldType(str, Enum):
     INTEGER = "integer"
@@ -110,7 +117,7 @@ class FieldType(str, Enum):
         for e in cls:
             if e.value == value:
                 return e
-        raise ValueError(f"Unknown `{cls}` value: {value}")
+        raise excp.LiteralError(str(cls), list(cls.__members__.values()))
 
     def into_sqlalchemy(self) -> Type[TypeEngine]:
         match self.value:
@@ -125,7 +132,7 @@ class FieldType(str, Enum):
             case "json":
                 return JSON
             case "unknown":
-                raise ValueError("Unknown Field type")
+                raise excp.LiteralError(str(FieldType), list(FieldType.__members__.values()))
 
     @classmethod
     def from_sqlalchemy(cls, value: TypeEngine) -> FieldType:
@@ -191,7 +198,7 @@ class DataDefinition:
 
     def __attrs_post_init__(self) -> None:
         if (self.path is not None and self.data is not None) or (self.path is None and self.data is None):
-            raise ValueError("DataDefinition must define either a path or data")
+            raise excp.ConfigsError("Data should be either a file path or a payload")
 
     @classmethod 
     def from_configs(cls, configs: dict[str, Any] | None = None) -> DataDefinition | None:

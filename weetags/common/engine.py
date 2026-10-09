@@ -9,6 +9,7 @@ from sqlalchemy.engine import Engine as BaseEngine
 
 from typing import Any, Generator, Type
 
+import weetags.common.exceptions as excp
 from weetags.common.types import AcceptedFieldType
 from weetags.common.configs import FieldType
 from weetags.common.uri import EngineURI
@@ -95,7 +96,7 @@ class Engine:
     def create_schema(self, exist_ok: bool = True) -> None:
         with self.engine.connect() as conn:
             if conn.dialect.has_schema(conn, "main") and exist_ok is False:
-                raise ValueError("Schema main already exist.")
+                raise excp.SchemaError("main")
             elif conn.dialect.has_schema(conn, "main"):
                 return
             conn.execute(CreateSchema("main", if_not_exists=True))
@@ -111,7 +112,7 @@ class Engine:
     ) -> Table:
         exist = self.metadata.tables.get(name, None)
         if exist is not None and exist_ok is False:
-            raise ValueError(f"Table {name} already exist.")
+            raise excp.TableError("Table already exist: {name}")
         
         elif exist is not None:
             return exist
@@ -185,13 +186,13 @@ class Engine:
     def _table_or_raise(self, name: str) -> Table:
         table = self._table(name)
         if table is None:
-            raise KeyError(f"Unknown Table: {name}.")
+            raise excp.TableError("Unknown table: {name}")
         return table
 
     def _field_or_raise(self, table: Table, field_name: str) -> Column:
         field = table._columns.get(field_name, None)
         if field is None:
-            raise KeyError(f"Unknown field name: {field_name}")
+            raise excp.FieldError(field_name)
         return field
 
     def _tables(self, name: str) -> list[Table]:
@@ -210,7 +211,7 @@ class Engine:
         columns = [c.name for c in table.columns.values()]
         for f in fields:
             if f not in columns:
-                raise KeyError(f"Unknown field: {f}")
+                raise excp.FieldError(f)
         return True
 
     def _serialize_value(self, stmt: Executable, args: list[Any] | None = None, commit: bool = False) -> Any:
@@ -332,7 +333,7 @@ class BoundEngine(Engine):
     def _node_or_raise(self, name: str, fields: list[str] | None = None) -> dict[str, Any]:
         node = self._node(name, fields)
         if node is None:
-            raise ValueError(f"Unknown node name: {name}")
+            raise excp.NodeError("name", name)
         return node
 
     def _nodes(self, *names: str, fields: list[str] | None = None) -> list[dict[str, Any]]:
@@ -346,7 +347,7 @@ class BoundEngine(Engine):
     def _node_from_nid_or_raise(self, nid: int, fields: list[str] | None = None) -> dict[str, Any]:
         node = self._node_from_nid(nid, fields)
         if node is None:
-            raise ValueError(f"Unknown node nid: {nid}")
+            raise excp.NodeError("id", str(nid))
         return node
 
     def _nodes_from_nid(self, *nids: int, fields: list[str] | None = None) -> list[dict[str, Any]]:
@@ -404,7 +405,7 @@ class BoundEngine(Engine):
         for f in fields:
             column = getattr(self.tree.c, f, None)
             if column is None:
-                raise KeyError(f"Unknown field name: {f}.")
+                raise excp.FieldError(f)
             columns.append(column)
         return columns
 
