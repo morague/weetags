@@ -28,6 +28,14 @@ class JsonObjectHandler(ABC):
             raise ValueError("Path must be composed like: <field>.<layer1>.<layer2>... ")
         return (field, inner)
 
+    def _handle_value(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return func.json_array(*value)
+        elif isinstance(value, dict):
+            return func.json(json.dumps(value))
+        else:
+            return value
+
     def _get_current_value(self, node: dict[str, Any], field: str, inner_path: list[str]) -> Any:
         obj = node.get(field, None)
         if obj is None:
@@ -64,7 +72,7 @@ class JsonObjectUpdateKey(JsonObjectHandler):
         nids = select(self._engine.tree.c.id).where(self._engine.tree.c.name == node).scalar_subquery()
         stmt = (
             update(self._engine._metadata)
-            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", json.dumps(value))})
+            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", self._handle_value(value))})
             .where(self._engine._metadata.c.id == nids)
         )
         self._engine.execute(stmt, commit=True)
@@ -130,7 +138,7 @@ class JsonObjectAppendList(JsonObjectHandler):
         nids = select(self._engine.tree.c.id).where(self._engine.tree.c.name == node).scalar_subquery()
         stmt = (
             update(self._engine._metadata)
-            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", json.dumps(current))})
+            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}",  self._handle_value(current))})
             .where(self._engine._metadata.c.id == nids)
         )
         self._engine.execute(stmt, commit=True)
@@ -162,7 +170,7 @@ class JsonObjectExtendList(JsonObjectHandler):
         nids = select(self._engine.tree.c.id).where(self._engine.tree.c.name == node).scalar_subquery()
         stmt = (
             update(self._engine._metadata)
-            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", json.dumps(current))})
+            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", self._handle_value(current))})
             .where(self._engine._metadata.c.id == nids)
         )
         self._engine.execute(stmt, commit=True)
@@ -194,7 +202,7 @@ class JsonObjectPopList(JsonObjectHandler):
         nids = select(self._engine.tree.c.id).where(self._engine.tree.c.name == node).scalar_subquery()
         stmt = (
             update(self._engine._metadata)
-            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", json.dumps(current))})
+            .values({field: handler(self._engine._metadata.c.data, f"$.{inner_path}", self._handle_value(current))})
             .where(self._engine._metadata.c.id == nids)
         )
         self._engine.execute(stmt, commit=True)

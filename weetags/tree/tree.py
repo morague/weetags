@@ -61,10 +61,10 @@ class TreeMetadata:
         self.name = name
         self._engine = engine
 
-    def update_node(self, name: str, values: dict[str, Any]) -> None:
+    def update_node(self, name: str, **values: Any) -> None:
         self._engine.update_node(name, values)
 
-    def update_nodes(self, *conditions: ColumnElement | Relation, values: dict[str, Any]) -> None:
+    def update_nodes(self, *conditions: ColumnElement | Relation, **values: Any) -> None:
         self._engine.update_nodes(*conditions, values=values)
 
     def append_list(self, name: str, key: str, value: Any) -> None:
@@ -73,8 +73,8 @@ class TreeMetadata:
     def extend_list(self, name: str, key: str, value: list[Any]) -> None:
         self._engine.extend_list(name, key, value)
 
-    def pop_list(self, name: str, key: str) -> None:
-        self._engine.pop_list(name, key)
+    def pop_list(self, name: str, key: str, value: int) -> None:
+        self._engine.pop_list(name, key, value)
 
     def set_object_key(self, name: str, path: str, value: Any) -> None:
         self._engine.set_object_key(name, path, value)
@@ -234,6 +234,9 @@ class Tree:
 
     def node(self, name: str) -> Node | None:
         return self._into_node(self._engine.node(name))
+
+    def node_or_raise(self, name: str) -> Node:
+        return self._into_node_or_raise(self._engine._node_or_raise(name))
 
     def nodes(self, *conditions: ColumnElement | Relation):
         return self._engine.nodes(*conditions)

@@ -381,7 +381,6 @@ class TreeEngine(BoundEngine):
             parent_name = None
             parent_path = []
 
-        _ = self._node_or_raise(name)
         path = ".".join(parent_path + [name])
         level = len(path.split(".")) - 1
         nid = self.write_topology({"name": name, "path": path, "parent": parent_name, "children": [], "level": level})
@@ -551,12 +550,7 @@ class TreeEngine(BoundEngine):
     def pop_list(self, name: str, key: str, value: Any = -1) -> Any:
         node = self._node_or_raise(name)
         v: list[Any] = node.get(key, [])
-        try: 
-            index = v.index(value)
-        except IndexError:
-            return None
-
-        poped = v.pop(index)
+        poped = v.pop(value)
         self.update_metadata([node["id"]], {key:v})
         return poped
 
