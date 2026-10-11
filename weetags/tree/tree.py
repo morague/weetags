@@ -206,7 +206,7 @@ class Tree:
         return cls(name, tree_engine)
 
     @classmethod
-    def from_tree_file(cls, path: Path | str, loader: Type[Loader] = YamlLoader) -> Tree:
+    def from_specs(cls, path: Path | str, loader: Type[Loader] = YamlLoader) -> Tree:
         path = Path(path)
         configs = TreeConfig.parse_file(path, loader)
         return cls.from_configs(configs)

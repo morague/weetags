@@ -102,7 +102,7 @@ def build_rules(configs: Path) -> None:
 @trees.command("build")
 @click.argument("path", type=Path)
 def build_trees(path: Path) -> None:
-    TreeBuilder.build_from_tree_file(path)
+    TreeBuilder.build_from_specs(path)
 
 users.add_command(user_update)
 wee.add_command(users)

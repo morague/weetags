@@ -59,7 +59,7 @@ class TreeBuilder:
         return cls(engine)
 
     @classmethod
-    def build_from_tree_file(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
+    def build_from_specs(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
         configs = conf.TreeConfig.parse_file(path, loader)
         return cls.from_configs(configs)
 
