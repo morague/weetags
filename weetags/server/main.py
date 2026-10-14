@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from importlib import metadata
 import os
 import glob
 import sanic_ext
+from sanic_ext import openapi
 from sanic import Sanic
 from pathlib import Path
 from sanic.log import LOGGING_CONFIG_DEFAULTS
@@ -14,7 +16,7 @@ from weetags.common.loaders import ConfigLoader, YamlLoader, Loader
 from weetags.common.configs import TreeConfig
 import weetags.server.listeners as lstn
 import weetags.server.middlewares as mdlw
-from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp, topologybp
+from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp, topologybp, metadatabp
 from weetags.server.authentication import Authenticator, EngineURI
 
 class Weetags:
@@ -44,14 +46,30 @@ class Weetags:
         self.app.blueprint(auth)
         self.app.blueprint(explorerbp)
         self.app.blueprint(topologybp)
+        self.app.blueprint(metadatabp)
         self.app.on_request(mdlw.go_fast, priority=10)
         self.app.on_request(mdlw.authorize, priority=9)
         self.app.on_response(mdlw.log_exit, priority=10)
         self.app.error_handler.add(Exception, mdlw.error_handler)
 
-        self.app.main_process_start(lstn.states, priority=0)
+        self.app.main_process_start(lstn.states)
+        self.app.main_process_start(lstn.header)
         self.app.after_server_start(lstn.build, priority=10)
         self.app.after_server_start(lstn.load_trees, priority=9)
+
+
+
+        openapi.exclude(bp=basebp)
+        openapi.exclude(bp=nodesbp)
+        openapi.exclude(bp=utilsbp)
+        openapi.exclude(bp=auth)
+        openapi.exclude(bp=explorerbp)
+        openapi.exclude(bp=topologybp)
+        openapi.exclude(bp=metadatabp)
+
+        self.app.config.OAS_AUTODOC = False
+        oas = YamlLoader().load("weetags/server/oas.yml")
+        self.app.ext.openapi.raw(oas)
 
 
     def __call__(self, *args: Any, **kwds: Any) -> Sanic:
@@ -86,6 +104,9 @@ class Weetags:
             
     def extend(self) -> None:
         ...
+
+    def summary(self): ...
+
 
     def tree_configs(self, file_or_folder: str | Path, loader: Type[Loader] = YamlLoader) -> dict[str, Any]:
         path = Path(file_or_folder)
@@ -128,6 +149,11 @@ class Weetags:
                 },
                 "loggers": {
                     "access": {
+                        "level": "INFO",
+                        "handlers": ["stream"],
+                        "propagate": False
+                    },
+                    "build": {
                         "level": "INFO",
                         "handlers": ["stream"],
                         "propagate": False

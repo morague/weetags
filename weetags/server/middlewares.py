@@ -53,4 +53,4 @@ async def error_handler(request: Request, exception: Exception):
     )
 
     logger.error(traceback.format_exc())
-    return json({"status": status, "reasons": str(exception)}, status=status)
+    return json({"status": "error", "reasons": str(exception)}, status=status)

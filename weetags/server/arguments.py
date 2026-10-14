@@ -311,6 +311,12 @@ class PruneArguments(ArgumentParser):
     subtree: str = field(validator=validators.instance_of(str))
 
 @define
+class MoveArguments(ArgumentParser):
+    tree_name: str = field(validator=validators.instance_of(str))
+    parent: str = field(validator=str_or_none)
+    subtree: str = field(validator=validators.instance_of(str))
+
+@define
 class ExportArguments(ArgumentParser):
     tree_name: str = field(validator=validators.instance_of(str))
     subtree: str | None = field(default=None, validator=str_or_none)

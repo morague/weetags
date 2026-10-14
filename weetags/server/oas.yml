@@ -1,0 +1,1150 @@
+openapi: 3.1.0
+info:
+  title: Weetags Server
+  version: 2.0.0
+
+components:
+  schemas:
+    String:
+      type: string
+    ListOfStr:
+      type: array
+      example: 'fields=field1,field2,field3'
+    Pageint:
+      type: integer
+      minimum: 0
+    PageSize:
+      type: integer
+      minimum: 1
+      maximum: 500
+    IsFlag:
+      type: string
+      example: "&param"
+    Index:
+      type: integer
+      minimum: -1
+    JsonObject:
+      type: object
+    ListJsonObject:
+      type: array
+      items:
+        $ref: "#/components/schemas/JsonObject"
+
+  responses:
+    HTMLResponse:
+      description: OK
+      content: 
+        text/html:
+          schema:
+            type: string
+    
+    AccessDeniedErrorResponse:
+      description: Access Denied Error
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              reasons:
+                type: string
+
+    ForbiddenAccessErrorResponse:
+      description: forbidden Error
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              reasons:
+                type: string
+
+    RequestErrorResponse:
+      description: Request Error
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              reasons:
+                type: string
+
+    AuthResponse:
+      description: JWT Response
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  max_age:
+                    type: integer
+                  cookie:
+                    type: boolean
+
+    AuthenticationError:
+      description: Authentication Error
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  max_age:
+                    type: integer
+                  cookie:
+                    type: boolean
+
+    ListNodesResponse:
+      description: Response payload
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: array
+                items:
+                  type: object
+
+    ListScalarResponse:
+      description: Response payload
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: array
+
+
+    JsonResponse:
+      description: Response payload
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: object
+
+    ListNullResponse:
+      description: Response payload
+      content: 
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              data:
+                type: array
+                nullable: true
+
+    StringResponse:
+      description: Response payload
+      content: 
+        application/json:
+          schema:
+            type: string 
+
+    FileResponse:
+      description: File attachement
+      content: 
+        application/jsonlines:
+          type: string
+          format: binary
+
+  parameters:
+    TreeName:
+      name: tree_name
+      description: Name of the tree
+      in: path
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    NodeName:
+      name: node_name
+      description: Name of the tree node
+      in: path
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Relation:
+      name: relation
+      description: |
+        Select a relation type.
+
+        accepted relations: `parent`, `children`, `siblings`, `ancestors`, `descendants`, `branch`
+      in: path
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    SubtreeInPath:
+      name: subtree
+      description: Name of the tree node at the top of a subtree.
+      in: path
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    SubtreeInQuery:
+      name: subtree
+      description: Name of the tree node at the top of a subtree.
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    FieldName:
+      name: field_name
+      description: |
+        Name of the node field.
+
+        tree field names can be listed using `/v1/trees/{tree_name}` endpoint.
+      in: path
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+
+    Username:
+      name: username
+      description: User username
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Password:
+      name: password
+      description: User password
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Parent:
+      name: parent
+      description: Name of the parent node
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Node1:
+      name: node1
+      description: Name of the first compared node
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Node2:
+      name: node2
+      description: Name of the second compared node
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Key:
+      name: key
+      description: Node field name.
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+    Path:
+      name: path
+      description: path of the object key .
+      in: query
+      required: true
+      style: form
+      example: field_name.key_one.key_two
+      schema:
+        $ref: "#/components/schemas/String"
+
+    Fields:
+      name: fields
+      description: Filter nodes fields. Only keep Selected fields and discard others.
+      in: query
+      required: false
+      style: form
+      example: "select=field1,field2,field3"
+      schema:
+        $ref: "#/components/schemas/ListOfStr"
+    Page:
+      name: page
+      description: determine the page number. Default page = 0
+      in: query
+      required: false
+      style: form
+      example: page=2
+      schema:
+        $ref: "#/components/schemas/Pageint"
+    PageSize:
+      name: page_size
+      description: determine the page size. Default page_size = 100. Maximum page_size is 500.
+      in: query
+      required: false
+      style: form
+      example: page_size=50
+      schema:
+        $ref: "#/components/schemas/PageSize"
+
+
+    Distinct:
+      name: distinct
+      description: Remove duplicates values.
+      in: query
+      style: form
+      example: &distinct
+      schema:
+        $ref: "#/components/schemas/IsFlag"
+    Force:
+      name: force
+      description: Force removal of a node. If the node has children, the children are removed as well due to the no orphan policy.
+      in: query
+      style: form
+      example: &force
+      schema:
+        $ref: "#/components/schemas/IsFlag"
+    IncludeSelf:
+      name: include_self
+      description: targeted node is also returned in the response payload data.
+      in: query
+      style: form
+      example: &include_self
+      schema:
+        $ref: "#/components/schemas/IsFlag"
+
+
+
+    R:
+      name: r
+      description: |
+        Define a relation condition. you can set multiple `r` arguments.
+
+        `r` is structured as follow: `{relation}:{node_name}`, which can be translated as: node_name IS IN (list of node names being part of the the node branch).
+
+        alternativaly, `r` can be negated using `!{relation}:{node_name}` which transform the operation into a IS NOT IN (...).
+        
+        Where `{relation}` is one of the accepted relations and `{node_name}` is an existing tree node name.
+
+        accepted relations: `parent`, `children`, `siblings`, `ancestors`, `descendants`, `branch`
+      in: query
+      required: false
+      style: form
+      example: | 
+        &r=branch:moza1250
+
+        &r=!descendants:moza1250
+
+        &r=ancestors:moza1250&r=!children:aaaa5678
+      schema:
+        $ref: "#/components/schemas/String"
+    Q:
+      name: q
+      description: |
+        Define a condition or a functional condition. you can set multiple `q` arguments.
+
+        `q` can be structured as a simple field comparison: `{field_name}->{operator}:{value}`.
+        
+        Or `q` can be structure as a functional comparison, 
+        where a function is first applied on a field, 
+        before handling a comparison with the function result:`{func}:{arg0},{arg1},{...}->{operator}:{value}`.
+
+        accepted operators: `=`,`!=`,`>`,`>=`,`<`,`<=`,`like`,`ilike`,`not_like`,`not_ilike`,`in`,`not_in`,`is`,`is_not`
+        
+        accepted functions: `json_each`
+
+        `json_each` allow to unpack json arrays and json objects and to compare any of its elements with a value. 
+
+      in: query
+      required: false
+      style: form
+      example: | 
+        &q=field_name->=:aaaa
+
+        &q=json_each:field_name,path->ilike:bbbb
+
+        &q=field_name->=:aaaa&q=json_each:field_name,path->ilike:bbbb
+      schema:
+        $ref: "#/components/schemas/String"
+
+    OnCollision:
+      name: on_collision
+      description: | 
+        On collision strategy
+
+        accepted strategies: `raise`,`ignore`,`update`,`replace`
+      in: query
+      required: false
+      style: form
+      schema:
+        $ref: "#/components/schemas/String"
+
+    Metadata:
+      name: metadata
+      description: Metadata of the node to be added
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/JsonObject"
+
+    Nodes:
+      name: nodes
+      description: List of nodes data (name, parent, metadata) to be added.
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/ListJsonObject"
+
+    Keymap:
+      name: keymap
+      in: query
+      required: False
+      style: form
+      schema:
+        $ref: "#/components/schemas/JsonObject"
+
+    Values:
+      name: values
+      description: mapping of key values to update.
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/JsonObject"
+    Value:
+      name: value
+      description: Value to be set
+      in: query
+      required: true
+      style: form
+    Index:
+      name: index
+      description: Index of the element to be popped
+      in: query
+      required: true
+      style: form
+      schema:
+        $ref: "#/components/schemas/Index"
+
+
+
+
+paths:
+
+  v1/login:
+    get: 
+      summary: Login
+      tags:
+        - auth
+      produces:
+        - text/html
+      responses:
+        200:
+          $ref: "#/components/responses/HTMLResponse"
+        
+  v1/auth:
+    post: 
+      summary: Authentication
+      tags:
+        - auth
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/AuthResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/Username"
+        - $ref: "#/components/parameters/Password"
+
+  v1/trees:
+    get: 
+      summary: Get trees
+      description: Get trees general informations
+      tags:
+        - utils
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNodesResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+
+  v1/trees/{tree_name}:
+    get: 
+      summary: Get tree 
+      description: Get specific tree general informations
+      tags:
+        - utils
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+
+  v1/trees/{tree_name}/root: 
+    get: 
+      summary: Get root node
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Fields"
+
+  v1/trees/{tree_name}/nodes:
+    get: 
+      summary: Get nodes
+      description: Get and Filter trees nodes
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNodesResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Fields"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/R"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+
+    patch:
+      summary: Update nodes metadata
+      description: Update nodes metadata of a set of filtered nodes 
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Fields"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/R"
+
+    delete:
+      summary: Delete nodes
+      description: Delete a set of filtered nodes
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/R"
+        - $ref: "#/components/parameters/Force"
+
+  v1/trees/{tree_name}/nodes/{node_name}: 
+    get: 
+      summary: Get node
+      description: Search tree node by node name.
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/NodeName"
+        - $ref: "#/components/parameters/Fields"
+
+    put: 
+      summary: Add node
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/NodeName"
+        - $ref: "#/components/parameters/Parent"
+        - $ref: "#/components/parameters/Metadata"
+
+    patch: 
+      summary: Update node metada
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/NodeName"
+        - $ref: "#/components/parameters/Values"
+
+    delete: 
+      summary: Delete node
+      description: Delete a given node. Deletion will fail if the node has children. When `force` is set, apply pruning instead, which can remove a whole subtree
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/NodeName"
+        - $ref: "#/components/parameters/Force"
+
+  v1/trees/{tree_name}/nodes/{node_name}/{relation}:
+    get: 
+      summary: Get node relations
+      description: Get all nodes with a given relation
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNodesResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/NodeName"
+        - $ref: "#/components/parameters/Relation"
+        - $ref: "#/components/parameters/Fields"
+
+  v1/trees/{tree_name}/nodes/{node_name}/closest: 
+    get: 
+      summary: Get closest nodes
+      description: Get and Filter trees nodes
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNodesResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Fields"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/R"
+
+  v1/trees/{tree_name}/fields/{field_name}:
+    get: 
+      summary: Get field Values
+      description: Get all (distinct) values from a field
+      tags:
+        - nodes
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListScalarResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Distinct"
+
+  v1/trees/{tree_name}/prune/{subtree}:
+    delete: 
+      summary: Prune subtree
+      description: Prune part of tree
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/subtree"
+
+  v1/trees/{tree_name}/move/{subtree}: 
+    patch: 
+      summary: Move subtree
+      description: Move part of tree
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/subtree"
+        - $ref: "#/components/parameters/Parent"
+  
+  v1/trees/{tree_name}/graft:
+    put: 
+      summary: Graft nodes
+      description: Add multiple nodes
+      tags:
+        - topology
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Keymap"
+        - $ref: "#/components/parameters/OnCollision"
+
+
+
+
+
+
+  v1/trees/{tree_name}/distance:
+    get: 
+      summary: nodes distance
+      tags:
+        - utils
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Node1"
+        - $ref: "#/components/parameters/Node2"
+  
+  
+  
+  v1/trees/{tree_name}/closest-common-ancestor:
+    get: 
+      summary: closest common ancestor
+      tags:
+        - utils
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Node1"
+        - $ref: "#/components/parameters/Node2"
+        - $ref: "#/components/parameters/Fields"
+
+
+  v1/trees/{tree_name}/draw:
+    get: 
+      summary: closest common ancestor
+      tags:
+        - utils
+      produces:
+        - text/plain
+      responses:
+        200:
+          $ref: "#/components/responses/StringResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/SubtreeInQuery"
+
+
+  v1/trees/{tree_name}/export:
+    get: 
+      summary: Tree exportation
+      tags:
+        - utils
+      produces:
+        - application/jsonlines
+      responses:
+        200:
+          $ref: "#/components/responses/FileResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/SubtreeInQuery"
+  
+
+  v1/trees/{tree_name}/explorer:
+    get: 
+      summary: Tree Explorer
+      tags:
+        - explorer
+      produces:
+        - text/html
+      responses:
+        200:
+          $ref: "#/components/responses/HTMLResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+  
+  v1/trees/{tree_name}/fields/{field_name}:
+    get: 
+      summary: Get field values
+      description: Get all (distinct ?) values from a field.
+      tags:
+        - utils
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/JsonResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/FieldName"
+        - $ref: "#/components/parameters/Distinct"
+
+
+
+  v1/trees/{tree_name}/nodes/{node_name}/appendList: 
+    patch: 
+      summary: Append Json array field
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Value"
+
+  v1/trees/{tree_name}/nodes/{node_name}/extendList:
+    patch: 
+      summary: Extend Json array field
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Value"
+
+  v1/trees/{tree_name}/nodes/{node_name}/popList:
+    patch: 
+      summary: Pop Json array field
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Index"
+
+  v1/trees/{tree_name}/nodes/{node_name}/setObjectKey:
+    patch: 
+      summary: Set json field key
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Path"
+        - $ref: "#/components/parameters/Value"
+  v1/trees/{tree_name}/nodes/{node_name}/popObjectKey: 
+    patch: 
+      summary: Pop json field key
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Path"
+
+  v1/trees/{tree_name}/nodes/{node_name}/objectAppendList: 
+    patch: 
+      summary: Append Json object array field key
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Path"
+        - $ref: "#/components/parameters/Value"
+
+  v1/trees/{tree_name}/nodes/{node_name}/objectExtendList:
+    patch: 
+      summary: Extend Json object array field key
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Path"
+        - $ref: "#/components/parameters/Value"
+
+  v1/trees/{tree_name}/nodes/{node_name}/objectPopList:
+    patch: 
+      summary: Pop Json object array field key
+      tags:
+        - metadata
+      produces:
+        - application/json
+      responses:
+        200:
+          $ref: "#/components/responses/ListNullResponse"
+        400:
+          $ref: "#/components/responses/RequestErrorResponse"
+        401:
+          $ref: "#/components/responses/AccessDeniedErrorResponse"
+        403:
+          $ref: "#/components/responses/ForbiddenAccessErrorResponse"
+      parameters: 
+        - $ref: "#/components/parameters/TreeName"
+        - $ref: "#/components/parameters/Nodes"
+        - $ref: "#/components/parameters/Path"
+
