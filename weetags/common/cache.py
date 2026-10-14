@@ -50,6 +50,9 @@ class LocalCacheEngine(CacheEngine):
     def __init__(self, **opts):
         self.cache = {}
 
+    def __repr__(self) -> str:
+        return self.name
+
     @property
     def name(self) -> str:
         return "local"
@@ -85,6 +88,9 @@ class MemcachedCacheEngine(CacheEngine):
         self.client = PooledClient(server, serde=serde.pickle_serde, max_pool_size=workers)
         self._set_key_prefix(prefix)
         self.flush()
+
+    def __repr__(self) -> str:
+        return f"{self.name}@{self.client.server}"
 
     @property
     def name(self) -> str:
