@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from importlib import metadata
 import os
 import glob
 import sanic_ext
@@ -17,7 +16,7 @@ from weetags.common.configs import TreeConfig
 import weetags.server.listeners as lstn
 import weetags.server.middlewares as mdlw
 from weetags.server.routes import weetagsbp, nodesbp, utilsbp, auth, explorerbp, basebp, topologybp, metadatabp
-from weetags.server.authentication import Authenticator, EngineURI
+from weetags.server.authentication import Authenticator
 
 class Weetags:
     app: Sanic
