@@ -43,28 +43,41 @@ args, kwargs:
 
 
 class TreeBuilder:
-    """
-    TODO: add builder arguments
-    TODO: check database before hand
-    TODO: build indexes
+    """TreeBuilder Structure
+
+    Build, update, recreate, etc... or simply load trees.
     """
     engine: Engine
 
     def __init__(self, engine: Engine):
+        """Initialize TreeBuilder
+
+        :param engine: Underlying Engine
+        :type engine: Engine
+        """
         self.engine = engine
 
     @classmethod
     def from_uri(cls, uri: EngineURI) -> TreeBuilder:
+        """Intialize TreeBuilder From a Database uri
+
+        :param uri: Database uri
+        :type uri: EngineURI
+        :return: initialized TreeBuilder structure
+        :rtype: TreeBuilder
+        """
         engine = Engine.from_uri(uri)
         return cls(engine)
 
     @classmethod
-    def build_from_specs(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
-        configs = conf.TreeConfig.parse_file(path, loader)
-        return cls.from_configs(configs)
-
-    @classmethod
     def from_configs(cls, configs: conf.TreeConfig) -> Tree:
+        """Initialize TreeBuilder and build from a TreeConfig.
+
+        :param configs: TreeConfig Structure
+        :type configs: TreeConfig
+        :return: Tree Structure
+        :rtype: Tree
+        """
         kwargs = configs.tree_inline
         builder = cls.from_uri(configs.uri)
         tree = builder._build(configs)
@@ -74,9 +87,24 @@ class TreeBuilder:
             assert configs.cache is not None
             cache = TreeCache(configs.cache.cache, **configs.cache.opts) # pyright: ignore
             tree.set_cache(cache)
-        return tree        
+        return tree     
 
-    
+    @classmethod
+    def build_from_specs(cls, path: str | Path, loader: Type[Loader] = YamlLoader) -> Tree:
+        """Initialize TreeBuilder and Build a Tree from a given spec file.
+
+        :param path: Path of the specs file
+        :type path: Path | str
+        :param loader: Specific loader for the specs file. Handle Yaml files by default. defaults to YamlLoader
+        :type loader: Type[Loader], optional
+        :return: Tree structure
+        :rtype: Tree
+        """
+        configs = conf.TreeConfig.parse_file(path, loader)
+        return cls.from_configs(configs)
+
+
+
     def build_from_file(
         self,
         name: str, 
@@ -93,6 +121,35 @@ class TreeBuilder:
         skip_init: bool = False,
         skip_import: bool = False,
     ) -> Tree:
+        """Build or update a tree
+
+        :param name: Tree name
+        :type name: str
+        :param fields: list of fields definitions. Define the nodes metadata structure
+        :type fields: list[conf.FieldDefinition]
+        :param data_path: jsonlines file path to data to be inserted in the tree. When None, generate an empty tree, defaults to None.
+        :type data_path: Path | str | None, optional
+        :param keymap: Translate data keys into weetags keys, defaults to None
+        :type keymap: dict[str, Any] | None, optional
+        :param indexes: Define Tree sql indexes, defaults to None
+        :type indexes: list[list[str]] | None, optional
+        :param unique_constraints: Define tree sql unique contraints, defaults to None
+        :type unique_constraints: list[list[str]] | None, optional
+        :param not_exist: Only build when tree doesn't exist already. When tree exist, load Tree structure, defaults to False.
+        :type not_exist: bool, optional
+        :param recreate: Drop and recreate Tree if already existing, defaults to False
+        :type recreate: bool, optional
+        :param on_change: Adopted strategy for tree alterations between actual tree and imported data. `raise`, `ignore`, `alter`, `recreate`, defaults to "raise"
+        :type on_change: OnChange, optional
+        :param on_collision: Adopted strategy when imported data collide with existing one. `raise`, `ignore`, `update`, `replace`, defaults to "raise"
+        :type on_collision: OnCollision, optional
+        :param skip_init: Skip initialization step. Initialization step create tables in the database, defaults to False
+        :type skip_init: bool, optional
+        :param skip_import: Skip importation step. Importation step import data from the given source, defaults to False
+        :type skip_import: bool, optional
+        :return: Tree Structure
+        :rtype: Tree
+        """
         s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
         b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
         d = conf.DataDefinition(path=data_path, keymap=keymap)
@@ -115,6 +172,35 @@ class TreeBuilder:
         skip_init: bool = False,
         skip_import: bool = False,
     ) -> Tree:
+        """Build or update a tree
+
+        :param name: Tree name
+        :type name: str
+        :param fields: list of fields definitions. Define the nodes metadata structure
+        :type fields: list[conf.FieldDefinition]
+        :param data: List of nodes payload to be imported into the tree, default to None.
+        :type data: list[dict[str, Any]] | None, optional
+        :param keymap: Translate data keys into weetags keys, defaults to None
+        :type keymap: dict[str, Any] | None, optional
+        :param indexes: Define Tree sql indexes, defaults to None
+        :type indexes: list[list[str]] | None, optional
+        :param unique_constraints: Define tree sql unique contraints, defaults to None
+        :type unique_constraints: list[list[str]] | None, optional
+        :param not_exist: Only build when tree doesn't exist already. When tree exist, load Tree structure, defaults to False.
+        :type not_exist: bool, optional
+        :param recreate: Drop and recreate Tree if already existing, defaults to False
+        :type recreate: bool, optional
+        :param on_change: Adopted strategy for tree alterations between actual tree and imported data. `raise`, `ignore`, `alter`, `recreate`, defaults to "raise"
+        :type on_change: OnChange, optional
+        :param on_collision: Adopted strategy when imported data collide with existing one. `raise`, `ignore`, `update`, `replace`, defaults to "raise"
+        :type on_collision: OnCollision, optional
+        :param skip_init: Skip initialization step. Initialization step create tables in the database, defaults to False
+        :type skip_init: bool, optional
+        :param skip_import: Skip importation step. Importation step import data from the given source, defaults to False
+        :type skip_import: bool, optional
+        :return: Tree Structure
+        :rtype: Tree
+        """
         s = conf.TreeStructureDefinition(fields, indexes, unique_constraints)
         b = conf.BuilderDefinition(not_exist, recreate, on_change, on_collision, skip_init,skip_import)
         d = conf.DataDefinition(data=data, keymap=keymap)
