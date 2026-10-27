@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import glob
+from requests import api
 import sanic_ext
 from sanic_ext import openapi
 from sanic import Sanic
@@ -46,7 +47,9 @@ class Weetags:
         self.app.static("/static", file_or_directory="./weetags/server/static", directory_view=True)
         self.load_api(**api)
         self.app.error_handler.add(Exception, mdlw.error_handler)
-
+        self.app.on_request(mdlw.go_fast, priority=10)
+        self.app.on_request(mdlw.authorize, priority=9)
+        self.app.on_response(mdlw.log_exit, priority=10)
         self.app.main_process_start(lstn.states)
         self.app.main_process_start(lstn.header)
         self.app.after_server_start(lstn.build, priority=10)
@@ -62,7 +65,7 @@ class Weetags:
 
     @classmethod
     def create_app(cls, path: str | Path | None = None) -> Weetags:
-        env_path = os.environ.get("SERVER_CONFIGS_PATH", None)
+        env_path = os.environ.get("WEETAGS_SERVER_CONFIGS_PATH", None)
         if path is None and env_path is None:
             raise ValueError("Configs file path not found.")
         if path is None:
@@ -146,6 +149,7 @@ class Weetags:
         return default
 
     def set_api_v1(self) -> None:
+        self.app.blueprint(weetagsbp)
         self.app.blueprint(basebp)
         self.app.blueprint(nodesbp)
         self.app.blueprint(utilsbp)
@@ -153,10 +157,9 @@ class Weetags:
         self.app.blueprint(explorerbp)
         self.app.blueprint(topologybp)
         self.app.blueprint(metadatabp)
-        self.app.on_request(mdlw.go_fast, priority=10)
-        self.app.on_request(mdlw.authorize, priority=9)
-        self.app.on_response(mdlw.log_exit, priority=10)
 
+
+        openapi.exclude(bp=weetagsbp)    
         openapi.exclude(bp=basebp)
         openapi.exclude(bp=nodesbp)
         openapi.exclude(bp=utilsbp)
@@ -166,5 +169,13 @@ class Weetags:
         openapi.exclude(bp=metadatabp)
 
     def load_api(self, **v: bool) -> None:
-        if v.get("v1", True):
+        v1_enabled = v.get("v1", True)
+        if v1_enabled:
             self.set_api_v1()
+
+        self.app.config.APIS = {
+            "v1": {
+                "enabled": v1_enabled,
+                "docs": "/docs"
+            }
+        }

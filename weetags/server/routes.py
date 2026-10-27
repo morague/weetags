@@ -16,8 +16,8 @@ from weetags.server.utils import get_engine, generate_notification_payload, uid
 from weetags.server.authentication import Authenticator
 
 basebp = Blueprint("base", "/")
-weetagsbp = Blueprint("weetags", "/", version="v1")
-auth = Blueprint("auth", "/", version="v1")
+weetagsbp = Blueprint("weetags", "/")
+auth = Blueprint("auth", "/")
 nodesbp = Blueprint("nodes", "/", version="v1")
 utilsbp = Blueprint("utils", "/", version="v1")
 explorerbp = Blueprint("explorer", "/", version="v1")
@@ -29,6 +29,11 @@ alterationbp = Blueprint("alteration", "/", version="v1")
 @basebp.route("/favicon.ico", methods=["GET"])
 async def favicon(request: Request) -> HTTPResponse:
     return empty()
+
+@weetagsbp.route("/", methods=["GET"])
+async def index(request: Request) -> JSONResponse:
+    return json({"status": "success", "data": request.app.config.APIS})
+    
 
 @auth.route("/auth", methods=["POST"])
 @arg.parser(arg.AuthArguments)

@@ -794,7 +794,7 @@ paths:
           $ref: "#/components/responses/ForbiddenAccessErrorResponse"
       parameters: 
         - $ref: "#/components/parameters/TreeName"
-        - $ref: "#/components/parameters/subtree"
+        - $ref: "#/components/parameters/SubtreeInPath"
 
   v1/trees/{tree_name}/move/{subtree}: 
     patch: 
@@ -815,7 +815,7 @@ paths:
           $ref: "#/components/responses/ForbiddenAccessErrorResponse"
       parameters: 
         - $ref: "#/components/parameters/TreeName"
-        - $ref: "#/components/parameters/subtree"
+        - $ref: "#/components/parameters/SubtreeInPath"
         - $ref: "#/components/parameters/Parent"
   
   v1/trees/{tree_name}/graft:
@@ -994,7 +994,7 @@ paths:
       parameters: 
         - $ref: "#/components/parameters/TreeName"
         - $ref: "#/components/parameters/Nodes"
-        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Key"
         - $ref: "#/components/parameters/Value"
 
   v1/trees/{tree_name}/nodes/{node_name}/extendList:
@@ -1016,7 +1016,7 @@ paths:
       parameters: 
         - $ref: "#/components/parameters/TreeName"
         - $ref: "#/components/parameters/Nodes"
-        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Key"
         - $ref: "#/components/parameters/Value"
 
   v1/trees/{tree_name}/nodes/{node_name}/popList:
@@ -1038,7 +1038,7 @@ paths:
       parameters: 
         - $ref: "#/components/parameters/TreeName"
         - $ref: "#/components/parameters/Nodes"
-        - $ref: "#/components/parameters/key"
+        - $ref: "#/components/parameters/Key"
         - $ref: "#/components/parameters/Index"
 
   v1/trees/{tree_name}/nodes/{node_name}/setObjectKey:

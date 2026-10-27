@@ -158,7 +158,7 @@ class Authenticator(Engine):
     MAXIMUM_PRIORITY: int = 1000
 
     BYPASS_PATHS_PATTERN = ["/favicon.ico*", "/static*"]
-    BYPASS_BLUEPRINTS = ["auth"]
+    BYPASS_BLUEPRINTS = ["auth", "weetags"]
 
     def __init__(
         self, 
