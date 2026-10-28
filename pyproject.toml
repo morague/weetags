@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 
 
 [tool.setuptools.packages.find]
-exclude = ["trees", "data", "tests"]
+exclude = ["trees", "data", "tests", "weetags.server", "weetags.cli"]
 
 [project.scripts]
 wee = "weetags.cli:wee"
