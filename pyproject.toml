@@ -32,7 +32,7 @@ server = [
 
 
 [build-system]
-requires = ["setuptools == 66.1.1"]
+requires = ["setuptools>=84.1.0"]
 build-backend = "setuptools.build_meta"
 
 
