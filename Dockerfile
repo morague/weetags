@@ -11,7 +11,7 @@ ENV UV_NO_PROGRESS=1 \
 RUN apk update && apk upgrade \ 
     && apk add --no-cache sqlite git
 
-RUN git clone --single-branch --branch v2 https://github.com/morague/weetags.git /app
+RUN git clone --single-branch --branch main https://github.com/morague/weetags.git /app
 
 
 WORKDIR /app
