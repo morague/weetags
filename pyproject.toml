@@ -1,6 +1,6 @@
 [project]
 name = "weetags"
-version = "2.0.1"
+version = "2.0.2"
 description = ""
 readme = "README.md"
 requires-python = ">=3.13"
@@ -43,7 +43,7 @@ wee = "weetags.cli:wee"
 
 
 [tool.commitizen]
-version = "2.0.1"
+version = "2.0.2"
 version_files = [
     "pyproject.toml:^version",
     "weetags/VERSION"
