@@ -1,8 +1,142 @@
 # Weetags
-Weetags is a **persistent tree engine** based on **Sqlite / Postgres**.
+Weetags is a **persistent tree engine** based on **Sqlite / Postgres** that can be dployed either as a **Framework** or as a **Webserver**
 
-## Weetags Server
-...
+## Weetags Web Server
+Weetags propose a Webserver alternative that expose all the Tree methods, & more in the future.
+
+### Setup
+Weetags provide a [Dockerfile](/Dockerfile) as well as [docker compose](/compose-examples/compose-example/) and [quadlet](/compose-examples/quadlet-example/) setup examples. DOcker images will be later published to DockerHub.
+
+```yaml
+services:
+  weetags:
+    build: .
+    container_name: weetags
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8000:8000
+    environment:
+      WEETAGS_SERVER_CONFIGS_PATH: "server.yml"
+      WEETAGS_SECRET_KEY: "..."
+      MEMCACHED_SERVER: "localhost:11211"
+    command:
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=4
+    volumes:
+      - ./data:/app/data
+      - ./trees:/app/trees
+      - ./databases:/app/databases
+      - ./server.yml:/app/server.yml
+```
+### Configuration
+More detailed documentation can be found [here](/docs/). Env variable can be injected inside the configuration files by annotating `${<ENV_VARIABLE_NAME>}`
+
+#### Server Configuration
+[Weetags server configuration file](/docs/server_configurations.md). Configuration file path can be referenced in `WEETAGS_SERVER_CONFIGS_PATH` environment variable.
+* This file aim at mainly configurating the *enabled api versions* & the *authentication* system.
+* `auth.uri` define the database that will store the server `users` & `access rules`.
+  * The current weetags version only support **Sqlite** as database for handling authentication operations.
+
+Example:
+```yaml
+name: weetags
+trees: ./trees
+
+api:
+  v1: True
+
+configs:
+  secret_key: ${WEETAGS_SECRET_KEY}
+
+auth:
+  max_age: 10800
+  secret_key: ${WEETAGS_SECRET_KEY}
+  maximum_priority: 1000
+  
+  builder:
+    recreate_rules: false
+    default: deny
+
+  uri:
+    dialect: sqlite
+    database: "databases/weetags.sqlite"
+
+  rules:
+    - type: path
+      priority: 1
+      methods: ["*"]
+      rule: /docs
+      role: "*"
+
+    - type: path
+      priority: 1
+      methods: ["*"]
+      rule: /v1/trees
+      role: <role_name>
+
+    - type: path
+      priority: 9
+      methods: ["PUT", "PATCH", "DELETE"]
+      rule: /v1/trees/<tree_name>*
+      role: <role_name>
+
+    - type: path
+      priority: 10
+      methods: ["*"]
+      rule: /v1/trees/<tree_name>*
+      role: <role_name>  
+```
+
+#### Tree configuration
+Weetags only support Trees defined by a specs file. [Specs file configuration system](/docs/specs_files.md)
+
+Example:
+```yaml
+name: <tree_name>
+type: tree
+
+uri:
+  dialect: sqlite
+  database: databases/weetags.sqlite
+  
+cache:
+  cache: memcached
+  opts:
+    server: ${MEMCACHED_SERVER}
+    workers: 4
+    prefix: weetags_
+
+data:
+  path: /path/to/data.jl
+
+builder:
+  not_exist: True
+  recreate: False
+  on_change: raise
+  on_collision: raise
+  skip_init: False
+  skip_import: False
+
+structure:
+  fields:
+    - name: <field_name>
+      type: text
+      unique: True
+      nullable: false
+      index: True
+
+    - name: <field_name>
+      type: json
+      unique: False
+      nullable: True
+
+    - name: <field_name>
+      type: json
+      unique: False
+      nullable: False
+```
+
 
 ## weetags FrameWork
 ```bash
@@ -166,51 +300,16 @@ The tree `topology` define the tree structure and nodes relations. Using `Tree.T
 Tree Alterations are possible through the `Tree.Alteration` object. However, it is currently very limited and unstable. Altering a tree in te middle of your runtime is not recommended in the current release.
 
 
-## Tasks
+## Development
+### Tasks
+
 * [ ] adding unit tests
-* **engine**
-  * [x] Drop tree capabilities
-* **builder**
-  * [ ] accept nested payload format
-  * [x] build indexes
-  * [x] build unique constraints
-  * [ ] Cmp existing / importer payload structure & typing for the `alteration` path.
-  * [ ] handle basic alteration for the `alteration` path.
-* **configs**
-  * [ ] handle all new builders arguments
-  * [ ] add default value support
-* **drawer**
-  * [ ] build an optimized tree drawer
-* **cache**
-  * [ ] continue adding tree methods support
-  * [ ] btree storage of the topology & more granular storage.
-  * [ ] more granular storage of the references
-
-* **known issues**:
-  * [ ] not null and default clash. a not adding a non nullable despite having a default raise an Integrity error.
-  * [ ] engine does'nt reflect tree alterations.
-  * [ ] error during node creation process yield situations where topology exist, but not metadata. remove topology on failled insertion
-
-## Importation
-### Accepted payload format
-accepted json format:
-* nested format:
-```json
-{"name": str, "parent": str, "metadata": {...}}
-```
-* inline format:
-```json
-{"name": str, "parent": str, ...}
-```
-
-
-
-
-
-## Engine
-
-```
-
-
-
-```
+* **Tree**:
+  * [ ] Handle `not_in` with `Relation` class.
+  * [ ] Try handling runtime Tree Alteration. Currently, alterations are not reflected at runtime and force to restart processes.
+* **Tree Builder**:
+  * [ ] fix / handle fields default values
+  * [ ] handle more `on_collision` strategies
+  * [ ] handle more `on_change` strategies
+* **Forest**:
+  * [ ] Add support for Forest structures
